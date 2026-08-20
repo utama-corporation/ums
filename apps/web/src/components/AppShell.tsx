@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "@/lib/SessionProvider";
-import { apiClient } from "@/lib/api";
+import NotificationBell from "@/components/NotificationBell";
 
 const PUBLIC_PREFIXES = ["/login", "/403", "/external/", "/verify/"];
 
@@ -88,6 +88,7 @@ const PAGE_TITLES: { match: (p: string) => boolean; title: string }[] = NAV_GROU
 const DETAIL_ROUTE_TITLES: { match: RegExp; title: string }[] = [
   { match: /^\/memos\/[^/]+$/, title: "Detail Memo" },
   { match: /^\/approvals\/[^/]+$/, title: "Detail Persetujuan" },
+  { match: /^\/notifications$/, title: "Notifikasi" },
 ];
 
 function pageTitleFor(pathname: string): string {
@@ -113,7 +114,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { user, loading, logout } = useSession();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [unreadCount, setUnreadCount] = useState<number | null>(null);
   const clock = useClock();
 
   const publicPath = isPublicPath(pathname);
@@ -126,17 +126,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       router.replace("/dashboard");
     }
   }, [loading, user, publicPath, pathname, router]);
-
-  useEffect(() => {
-    if (!user) return;
-    let cancelled = false;
-    apiClient<{ unreadCount: number }>("/dashboard").then((res) => {
-      if (!cancelled && res.success && res.data) setUnreadCount(res.data.unreadCount);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [user]);
 
   if (publicPath) {
     return <main className="flex-1">{children}</main>;
@@ -213,14 +202,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </div>
           <div className="flex items-center gap-3 md:gap-4">
             <span className="hidden md:inline text-sm text-slate-500 font-mono">{clock}</span>
-            <Link href="/dashboard" className="relative text-xl" aria-label={`${unreadCount ?? 0} memo belum dibaca`}>
-              🔔
-              {!!unreadCount && (
-                <i className="not-italic absolute -right-2 -top-2 bg-ums-red text-white rounded-full px-1.5 text-[10px] font-bold">
-                  {unreadCount > 99 ? "99+" : unreadCount}
-                </i>
-              )}
-            </Link>
+            <NotificationBell />
             <div className="relative">
               <button
                 onClick={() => setMenuOpen((v) => !v)}

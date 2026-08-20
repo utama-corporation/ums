@@ -10,6 +10,23 @@ export const CompanyProfileUpdateSchema = z.object({
 
 export type CompanyProfileUpdateInput = z.infer<typeof CompanyProfileUpdateSchema>;
 
+export const SmtpConfigSchema = z.object({
+  host: z.string().min(1),
+  port: z.number().int().min(1).max(65535),
+  secure: z.boolean(),
+  user: z.string().optional().nullable(),
+  from: z.string().min(3),
+});
+
+export type SmtpConfigInput = z.infer<typeof SmtpConfigSchema>;
+
+export const EmailTemplateUpdateSchema = z.object({
+  subject: z.string().min(1),
+  bodyHtml: z.string().min(1),
+});
+
+export type EmailTemplateUpdateInput = z.infer<typeof EmailTemplateUpdateSchema>;
+
 export const SecurityPolicySchema = z.object({
   accessTokenTtlMinutes: z.number().int().min(1).max(1440),
   refreshTokenTtlDays: z.number().int().min(1).max(90),

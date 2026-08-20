@@ -45,6 +45,24 @@ export async function createDisposition(memoId: string, input: DispositionCreate
       },
     });
 
+    for (const task of disposition.tasks) {
+      await tx.domainOutboxEvent.create({
+        data: {
+          eventType: "TASK_ASSIGNED",
+          aggregateType: "Task",
+          aggregateId: task.id,
+          payloadJson: JSON.stringify({
+            taskId: task.id,
+            title: task.title,
+            memoId,
+            memoTitle: memo.title,
+            memoNumber: memo.memoNumber,
+            assigneeUserIds: task.assignees.map((a) => a.userId),
+          }),
+        },
+      });
+    }
+
     await logAuditEvent({
       actorId: issuer.id,
       action: "DISPOSITION_CREATED",
@@ -61,7 +79,7 @@ export async function createDisposition(memoId: string, input: DispositionCreate
 export async function updateTaskProgress(taskId: string, input: TaskProgressUpdateInput, user: UserProfile) {
   const task = await prisma.task.findUnique({
     where: { id: taskId },
-    include: { assignees: true },
+    include: { assignees: true, disposition: true },
   });
   if (!task) throw new NotFoundError("Task not found");
 
@@ -72,24 +90,44 @@ export async function updateTaskProgress(taskId: string, input: TaskProgressUpda
     throw new ForbiddenError("Only assigned users can update task progress");
   }
 
-  const updated = await prisma.task.update({
-    where: { id: taskId },
-    data: {
-      progress: input.progress,
-      status: input.status,
-      startDate: task.startDate || new Date(),
-      completedAt: input.status === "COMPLETED" ? new Date() : null,
-    },
-  });
+  const updated = await prisma.$transaction(async (tx) => {
+    const result = await tx.task.update({
+      where: { id: taskId },
+      data: {
+        progress: input.progress,
+        status: input.status,
+        startDate: task.startDate || new Date(),
+        completedAt: input.status === "COMPLETED" ? new Date() : null,
+      },
+    });
 
-  await prisma.taskStatusHistory.create({
-    data: {
-      taskId,
-      fromStatus: task.status,
-      toStatus: input.status,
-      actorId: user.id,
-      comment: input.comment || `Progress updated to ${input.progress}%`,
-    },
+    await tx.taskStatusHistory.create({
+      data: {
+        taskId,
+        fromStatus: task.status,
+        toStatus: input.status,
+        actorId: user.id,
+        comment: input.comment || `Progress updated to ${input.progress}%`,
+      },
+    });
+
+    if (input.status === "WAITING_VERIFICATION" || input.status === "COMPLETED") {
+      await tx.domainOutboxEvent.create({
+        data: {
+          eventType: "TASK_VERIFICATION_REQUESTED",
+          aggregateType: "Task",
+          aggregateId: taskId,
+          payloadJson: JSON.stringify({
+            taskId,
+            title: task.title,
+            issuerId: task.disposition.issuerId,
+            reportedByUserId: user.id,
+          }),
+        },
+      });
+    }
+
+    return result;
   });
 
   await logAuditEvent({
@@ -106,7 +144,7 @@ export async function updateTaskProgress(taskId: string, input: TaskProgressUpda
 export async function verifyTask(taskId: string, input: TaskVerifyInput, user: UserProfile) {
   const task = await prisma.task.findUnique({
     where: { id: taskId },
-    include: { disposition: true },
+    include: { disposition: true, assignees: true },
   });
   if (!task) throw new NotFoundError("Task not found");
 
@@ -120,23 +158,41 @@ export async function verifyTask(taskId: string, input: TaskVerifyInput, user: U
   const newStatus = input.action === "APPROVE_COMPLETED" ? "COMPLETED" : "IN_PROGRESS";
   const newProgress = input.action === "APPROVE_COMPLETED" ? 100 : task.progress;
 
-  const updated = await prisma.task.update({
-    where: { id: taskId },
-    data: {
-      status: newStatus,
-      progress: newProgress,
-      completedAt: input.action === "APPROVE_COMPLETED" ? new Date() : null,
-    },
-  });
+  const updated = await prisma.$transaction(async (tx) => {
+    const result = await tx.task.update({
+      where: { id: taskId },
+      data: {
+        status: newStatus,
+        progress: newProgress,
+        completedAt: input.action === "APPROVE_COMPLETED" ? new Date() : null,
+      },
+    });
 
-  await prisma.taskStatusHistory.create({
-    data: {
-      taskId,
-      fromStatus: task.status,
-      toStatus: newStatus,
-      actorId: user.id,
-      comment: input.comment || `Verification action: ${input.action}`,
-    },
+    await tx.taskStatusHistory.create({
+      data: {
+        taskId,
+        fromStatus: task.status,
+        toStatus: newStatus,
+        actorId: user.id,
+        comment: input.comment || `Verification action: ${input.action}`,
+      },
+    });
+
+    await tx.domainOutboxEvent.create({
+      data: {
+        eventType: input.action === "APPROVE_COMPLETED" ? "TASK_VERIFIED_COMPLETED" : "TASK_REWORK_REQUESTED",
+        aggregateType: "Task",
+        aggregateId: taskId,
+        payloadJson: JSON.stringify({
+          taskId,
+          title: task.title,
+          assigneeUserIds: task.assignees.map((a) => a.userId),
+          comment: input.comment || null,
+        }),
+      },
+    });
+
+    return result;
   });
 
   await logAuditEvent({
@@ -157,23 +213,39 @@ export async function checkAndMarkOverdueTasks() {
       deadline: { lt: now },
       status: { notIn: ["COMPLETED", "CANCELLED", "OVERDUE"] },
     },
-    include: { assignees: true },
+    include: { assignees: true, disposition: true },
   });
 
   for (const task of overdueTasks) {
-    await prisma.task.update({
-      where: { id: task.id },
-      data: { status: "OVERDUE" },
-    });
+    await prisma.$transaction(async (tx) => {
+      await tx.task.update({
+        where: { id: task.id },
+        data: { status: "OVERDUE" },
+      });
 
-    await prisma.taskStatusHistory.create({
-      data: {
-        taskId: task.id,
-        fromStatus: task.status,
-        toStatus: "OVERDUE",
-        actorId: task.assignees?.[0]?.userId || "system",
-        comment: "SLA Deadline exceeded. Task marked OVERDUE automatically.",
-      },
+      await tx.taskStatusHistory.create({
+        data: {
+          taskId: task.id,
+          fromStatus: task.status,
+          toStatus: "OVERDUE",
+          actorId: null,
+          comment: "SLA deadline exceeded. Task marked OVERDUE automatically.",
+        },
+      });
+
+      await tx.domainOutboxEvent.create({
+        data: {
+          eventType: "TASK_OVERDUE",
+          aggregateType: "Task",
+          aggregateId: task.id,
+          payloadJson: JSON.stringify({
+            taskId: task.id,
+            title: task.title,
+            issuerId: task.disposition.issuerId,
+            assigneeUserIds: task.assignees.map((a) => a.userId),
+          }),
+        },
+      });
     });
   }
 

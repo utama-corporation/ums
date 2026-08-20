@@ -636,7 +636,7 @@ model TaskStatusHistory {
   taskId     String   @db.Uuid
   fromStatus String?
   toStatus   String
-  actorId    String   @db.Uuid
+  actorId    String?  @db.Uuid
   comment    String?
   createdAt  DateTime @default(now()) @db.Timestamptz
 
@@ -727,4 +727,15 @@ model SystemSetting {
   value       String   @db.Text
   description String?
   updatedAt   DateTime @updatedAt @db.Timestamptz
+}
+
+// One row per Notification.type / notifyUsers() `type` value. The set of rows is fixed
+// by what the worker actually knows how to trigger (seeded in packages/db/src/seed.ts) —
+// admins edit subject/bodyHtml, they don't add arbitrary new notification types here.
+model EmailTemplate {
+  id               String   @id @default(uuid()) @db.Uuid
+  notificationType String   @unique
+  subject          String
+  bodyHtml         String   @db.Text
+  updatedAt        DateTime @updatedAt @db.Timestamptz
 }

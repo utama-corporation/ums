@@ -19,6 +19,45 @@ interface SecurityPolicy {
   refreshTokenTtlDays: number;
 }
 
+interface SmtpConfig {
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string | null;
+  from: string;
+}
+
+interface EmailTemplate {
+  notificationType: string;
+  subject: string;
+  bodyHtml: string;
+  variables: string[];
+  updatedAt: string | null;
+}
+
+const NOTIFICATION_TYPE_LABELS: Record<string, string> = {
+  APPROVAL_REQUIRED: "Memo Perlu Persetujuan",
+  MEMO_APPROVED: "Memo Disetujui",
+  TASK_ASSIGNED: "Tugas Baru Ditugaskan",
+  TASK_VERIFICATION_REQUESTED: "Tugas Menunggu Verifikasi",
+  TASK_VERIFIED_COMPLETED: "Tugas Disetujui Selesai",
+  TASK_REWORK_REQUESTED: "Tugas Perlu Direvisi",
+  TASK_OVERDUE: "Tugas Terlambat",
+};
+
+const SAMPLE_VALUES: Record<string, string> = {
+  title: "Contoh Judul Notifikasi",
+  message: "Contoh isi pesan notifikasi.",
+  memoTitle: "Permohonan Cuti Tahunan",
+  memoNumber: "001/HR/VIII/2026",
+  taskTitle: "Buat Laporan Bulanan",
+  comment: "Mohon lengkapi data pendukung.",
+};
+
+function renderPreview(template: string): string {
+  return template.replace(/\{\{(\w+)\}\}/g, (_m, key: string) => SAMPLE_VALUES[key] ?? `{{${key}}}`);
+}
+
 const TABS = [
   "Profil Perusahaan",
   "Penomoran Memo",
@@ -233,6 +272,253 @@ function SecurityTab() {
   );
 }
 
+function SmtpTab() {
+  const [form, setForm] = useState<SmtpConfig>({ host: "", port: 587, secure: false, user: "", from: "" });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
+  const [successMsg, setSuccessMsg] = useState("");
+
+  async function load() {
+    setLoading(true);
+    const res = await apiClient<SmtpConfig>("/settings/smtp");
+    setLoading(false);
+    if (res.success && res.data) {
+      setForm({ ...res.data, user: res.data.user || "" });
+    } else {
+      setErrorMsg(res.error?.message || "Gagal memuat konfigurasi SMTP");
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setErrorMsg("");
+    setSuccessMsg("");
+
+    const payload = { ...form, user: form.user || null };
+    const res = await apiClient<SmtpConfig>("/settings/smtp", { method: "PATCH", body: JSON.stringify(payload) });
+    setSaving(false);
+    if (res.success) {
+      setSuccessMsg(res.message || "Konfigurasi SMTP berhasil disimpan.");
+      load();
+    } else {
+      setErrorMsg(res.error?.message || "Gagal menyimpan konfigurasi SMTP");
+    }
+  }
+
+  async function handleTestEmail() {
+    setTesting(true);
+    setErrorMsg("");
+    setSuccessMsg("");
+    const res = await apiClient("/settings/smtp/test", { method: "POST" });
+    setTesting(false);
+    if (res.success) {
+      setSuccessMsg(res.message || "Email test sedang dikirim.");
+    } else {
+      setErrorMsg(res.error?.message || "Gagal mengirim email test");
+    }
+  }
+
+  if (loading) return <p className="text-sm text-slate-500">Memuat...</p>;
+
+  return (
+    <form onSubmit={handleSave} className="space-y-3.5 max-w-xl">
+      {errorMsg && <div className="bg-red-50 text-red-700 text-sm p-3 rounded border border-red-200">{errorMsg}</div>}
+      {successMsg && <div className="bg-green-50 text-green-700 text-sm p-3 rounded border border-green-200">{successMsg}</div>}
+      <p className="text-xs text-slate-500">
+        Konfigurasi server SMTP untuk pengiriman email notifikasi. Password SMTP dikelola lewat environment variable server
+        (<code>SMTP_PASS</code>) demi keamanan, bukan lewat form ini — hubungi admin infrastruktur untuk mengubahnya.
+      </p>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs font-bold mb-1.5">SMTP Host *</label>
+          <input
+            required
+            value={form.host}
+            onChange={(e) => setForm({ ...form, host: e.target.value })}
+            className="w-full border border-ums-border rounded-md px-3 py-2.5 text-sm"
+            placeholder="smtp.gmail.com"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-bold mb-1.5">Port *</label>
+          <input
+            required
+            type="number"
+            min={1}
+            max={65535}
+            value={form.port}
+            onChange={(e) => setForm({ ...form, port: Number(e.target.value) })}
+            className="w-full border border-ums-border rounded-md px-3 py-2.5 text-sm"
+          />
+        </div>
+      </div>
+      <div>
+        <label className="flex items-center gap-2 text-xs font-bold">
+          <input type="checkbox" checked={form.secure} onChange={(e) => setForm({ ...form, secure: e.target.checked })} />
+          Gunakan TLS implisit (SMTPS, umumnya port 465)
+        </label>
+      </div>
+      <div>
+        <label className="block text-xs font-bold mb-1.5">Username SMTP</label>
+        <input
+          value={form.user || ""}
+          onChange={(e) => setForm({ ...form, user: e.target.value })}
+          className="w-full border border-ums-border rounded-md px-3 py-2.5 text-sm"
+          placeholder="Kosongkan jika server tidak butuh autentikasi"
+        />
+      </div>
+      <div>
+        <label className="block text-xs font-bold mb-1.5">Alamat Pengirim (From) *</label>
+        <input
+          required
+          value={form.from}
+          onChange={(e) => setForm({ ...form, from: e.target.value })}
+          className="w-full border border-ums-border rounded-md px-3 py-2.5 text-sm"
+          placeholder="noreply@utama.co.id"
+        />
+      </div>
+      <div className="flex justify-between items-center pt-2">
+        <button type="button" onClick={handleTestEmail} disabled={testing} className="border border-ums-border text-slate-700 font-bold px-4 py-2 rounded-md text-sm disabled:opacity-50">
+          {testing ? "Mengirim..." : "Kirim Email Test"}
+        </button>
+        <button type="submit" disabled={saving} className="bg-ums-red text-white font-bold px-4 py-2 rounded-md text-sm disabled:opacity-50">
+          {saving ? "Menyimpan..." : "Simpan Perubahan"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function NotificationTemplatesTab() {
+  const [templates, setTemplates] = useState<EmailTemplate[]>([]);
+  const [selectedType, setSelectedType] = useState<string>("");
+  const [form, setForm] = useState({ subject: "", bodyHtml: "" });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
+  const [successMsg, setSuccessMsg] = useState("");
+
+  async function load() {
+    setLoading(true);
+    const res = await apiClient<EmailTemplate[]>("/email-templates");
+    setLoading(false);
+    if (res.success && res.data) {
+      setTemplates(res.data);
+      if (!selectedType && res.data.length > 0) {
+        setSelectedType(res.data[0].notificationType);
+        setForm({ subject: res.data[0].subject, bodyHtml: res.data[0].bodyHtml });
+      }
+    } else {
+      setErrorMsg(res.error?.message || "Gagal memuat template notifikasi");
+    }
+  }
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function selectTemplate(t: EmailTemplate) {
+    setSelectedType(t.notificationType);
+    setForm({ subject: t.subject, bodyHtml: t.bodyHtml });
+    setErrorMsg("");
+    setSuccessMsg("");
+  }
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setErrorMsg("");
+    setSuccessMsg("");
+
+    const res = await apiClient(`/email-templates/${selectedType}`, { method: "PATCH", body: JSON.stringify(form) });
+    setSaving(false);
+    if (res.success) {
+      setSuccessMsg("Template email berhasil disimpan.");
+      load();
+    } else {
+      setErrorMsg(res.error?.message || "Gagal menyimpan template email");
+    }
+  }
+
+  const current = templates.find((t) => t.notificationType === selectedType);
+
+  if (loading) return <p className="text-sm text-slate-500">Memuat...</p>;
+
+  return (
+    <div className="grid md:grid-cols-[200px_minmax(0,1fr)] gap-4">
+      <div className="space-y-1">
+        {templates.map((t) => (
+          <button
+            key={t.notificationType}
+            onClick={() => selectTemplate(t)}
+            className={`block w-full text-left px-3 py-2 rounded-md text-xs font-bold ${
+              t.notificationType === selectedType ? "bg-[#fff0f1] text-ums-red" : "text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            {NOTIFICATION_TYPE_LABELS[t.notificationType] || t.notificationType}
+          </button>
+        ))}
+      </div>
+
+      <form onSubmit={handleSave} className="space-y-3.5">
+        {errorMsg && <div className="bg-red-50 text-red-700 text-sm p-3 rounded border border-red-200">{errorMsg}</div>}
+        {successMsg && <div className="bg-green-50 text-green-700 text-sm p-3 rounded border border-green-200">{successMsg}</div>}
+
+        {current && (
+          <p className="text-xs text-slate-500">
+            Variabel tersedia untuk template ini:{" "}
+            {current.variables.map((v) => (
+              <code key={v} className="bg-slate-100 px-1.5 py-0.5 rounded text-[11px] mr-1">{`{{${v}}}`}</code>
+            ))}
+          </p>
+        )}
+
+        <div>
+          <label className="block text-xs font-bold mb-1.5">Subjek Email *</label>
+          <input
+            required
+            value={form.subject}
+            onChange={(e) => setForm({ ...form, subject: e.target.value })}
+            className="w-full border border-ums-border rounded-md px-3 py-2.5 text-sm"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-bold mb-1.5">Isi Email (HTML) *</label>
+          <textarea
+            required
+            value={form.bodyHtml}
+            onChange={(e) => setForm({ ...form, bodyHtml: e.target.value })}
+            rows={8}
+            className="w-full border border-ums-border rounded-md px-3 py-2.5 text-sm font-mono text-xs"
+          />
+        </div>
+
+        <div>
+          <p className="text-xs font-bold mb-1.5">Pratinjau (dengan data contoh)</p>
+          <div className="border border-ums-border rounded-md p-3 bg-slate-50 text-sm">
+            <p className="font-bold text-ums-text mb-2">{renderPreview(form.subject)}</p>
+            <div dangerouslySetInnerHTML={{ __html: renderPreview(form.bodyHtml) }} />
+          </div>
+        </div>
+
+        <div className="flex justify-end pt-2">
+          <button type="submit" disabled={saving} className="bg-ums-red text-white font-bold px-4 py-2 rounded-md text-sm disabled:opacity-50">
+            {saving ? "Menyimpan..." : "Simpan Perubahan"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState(TABS[0]);
 
@@ -257,6 +543,16 @@ export default function SettingsPage() {
           <>
             <h2 className="text-lg font-bold text-ums-text mb-4">Profil Perusahaan</h2>
             <CompanyProfileTab />
+          </>
+        ) : activeTab === "Email & SMTP" ? (
+          <>
+            <h2 className="text-lg font-bold text-ums-text mb-4">Email &amp; SMTP</h2>
+            <SmtpTab />
+          </>
+        ) : activeTab === "Notifikasi" ? (
+          <>
+            <h2 className="text-lg font-bold text-ums-text mb-4">Template Email Notifikasi</h2>
+            <NotificationTemplatesTab />
           </>
         ) : activeTab === "Keamanan" ? (
           <>

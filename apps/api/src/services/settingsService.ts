@@ -1,6 +1,7 @@
 import { prisma } from "@ums/db";
+import { env } from "@ums/config";
 import { NotFoundError } from "../errors/AppError.js";
-import { CompanyProfileUpdateInput, SecurityPolicyInput } from "@ums/contracts";
+import { CompanyProfileUpdateInput, SecurityPolicyInput, SmtpConfigInput } from "@ums/contracts";
 import { logAuditEvent } from "./auditService.js";
 
 export async function getCompanyProfile() {
@@ -77,4 +78,71 @@ export async function updateSecurityPolicy(input: SecurityPolicyInput, actorId?:
   });
 
   return input;
+}
+
+// SMTP password intentionally never lives here — it stays in the SMTP_PASS env var
+// (a secret-manager-style reference) so it's never exposed through the Settings API
+// or stored in plaintext in the database. Everything else (host/port/secure/user/from)
+// is a real, DB-backed setting the worker reads at send time (see apps/worker/src/mailer.ts).
+const SMTP_HOST_KEY = "smtp.host";
+const SMTP_PORT_KEY = "smtp.port";
+const SMTP_SECURE_KEY = "smtp.secure";
+const SMTP_USER_KEY = "smtp.user";
+const SMTP_FROM_KEY = "smtp.from";
+const SMTP_KEYS = [SMTP_HOST_KEY, SMTP_PORT_KEY, SMTP_SECURE_KEY, SMTP_USER_KEY, SMTP_FROM_KEY];
+
+export async function getSmtpConfig(): Promise<SmtpConfigInput> {
+  const rows = await prisma.systemSetting.findMany({ where: { key: { in: SMTP_KEYS } } });
+  const byKey = new Map(rows.map((r) => [r.key, r.value]));
+
+  return {
+    host: byKey.get(SMTP_HOST_KEY) ?? env.SMTP_HOST,
+    port: Number(byKey.get(SMTP_PORT_KEY)) || env.SMTP_PORT,
+    secure: byKey.has(SMTP_SECURE_KEY) ? byKey.get(SMTP_SECURE_KEY) === "true" : env.SMTP_PORT === 465,
+    user: byKey.get(SMTP_USER_KEY) ?? env.SMTP_USER ?? null,
+    from: byKey.get(SMTP_FROM_KEY) ?? env.SMTP_FROM,
+  };
+}
+
+export async function updateSmtpConfig(input: SmtpConfigInput, actorId?: string) {
+  const before = await getSmtpConfig();
+
+  await prisma.$transaction([
+    prisma.systemSetting.upsert({
+      where: { key: SMTP_HOST_KEY },
+      update: { value: input.host },
+      create: { key: SMTP_HOST_KEY, value: input.host, description: "SMTP server hostname" },
+    }),
+    prisma.systemSetting.upsert({
+      where: { key: SMTP_PORT_KEY },
+      update: { value: String(input.port) },
+      create: { key: SMTP_PORT_KEY, value: String(input.port), description: "SMTP server port" },
+    }),
+    prisma.systemSetting.upsert({
+      where: { key: SMTP_SECURE_KEY },
+      update: { value: String(input.secure) },
+      create: { key: SMTP_SECURE_KEY, value: String(input.secure), description: "Use implicit TLS (SMTPS)" },
+    }),
+    prisma.systemSetting.upsert({
+      where: { key: SMTP_USER_KEY },
+      update: { value: input.user || "" },
+      create: { key: SMTP_USER_KEY, value: input.user || "", description: "SMTP auth username" },
+    }),
+    prisma.systemSetting.upsert({
+      where: { key: SMTP_FROM_KEY },
+      update: { value: input.from },
+      create: { key: SMTP_FROM_KEY, value: input.from, description: "Default From header for outgoing email" },
+    }),
+  ]);
+
+  await logAuditEvent({
+    actorId,
+    action: "SMTP_CONFIG_UPDATED",
+    module: "settings",
+    resourceType: "SystemSetting",
+    beforeData: before,
+    afterData: input,
+  });
+
+  return getSmtpConfig();
 }
