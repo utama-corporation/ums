@@ -1,5 +1,5 @@
 import { Router, Request, Response, NextFunction } from "express";
-import { authenticate, requirePermission } from "../middleware/authMiddleware.js";
+import { authenticate, requirePermission, passwordResetRateLimiter } from "../middleware/authMiddleware.js";
 import { createUser, updateUser, resetUserPassword, listUsers } from "../services/userService.js";
 import { UserCreateSchema, UserUpdateSchema, PasswordResetSchema, PaginationQuerySchema } from "@ums/contracts";
 
@@ -53,7 +53,7 @@ usersRouter.patch("/:id", authenticate, requirePermission("master.user.manage"),
   }
 });
 
-usersRouter.post("/:id/reset-password", authenticate, requirePermission("master.user.manage"), async (req: Request, res: Response, next: NextFunction) => {
+usersRouter.post("/:id/reset-password", authenticate, requirePermission("master.user.manage"), passwordResetRateLimiter, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const input = PasswordResetSchema.parse(req.body);
     await resetUserPassword(req.params.id, input.newPassword, req.user?.id);

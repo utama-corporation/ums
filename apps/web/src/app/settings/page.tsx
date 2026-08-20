@@ -130,12 +130,13 @@ function CompanyProfileTab() {
       {errorMsg && <div className="bg-red-50 text-red-700 text-sm p-3 rounded border border-red-200">{errorMsg}</div>}
       {successMsg && <div className="bg-green-50 text-green-700 text-sm p-3 rounded border border-green-200">{successMsg}</div>}
       <div>
-        <label className="block text-xs font-bold mb-1.5">Kode</label>
-        <input value={profile.code} disabled className="w-full border border-ums-border rounded-md px-3 py-2.5 text-sm bg-slate-50 text-slate-500" />
+        <label htmlFor="cp-code" className="block text-xs font-bold mb-1.5">Kode</label>
+        <input id="cp-code" value={profile.code} disabled className="w-full border border-ums-border rounded-md px-3 py-2.5 text-sm bg-slate-50 text-slate-500" />
       </div>
       <div>
-        <label className="block text-xs font-bold mb-1.5">Nama Perusahaan *</label>
+        <label htmlFor="cp-name" className="block text-xs font-bold mb-1.5">Nama Perusahaan *</label>
         <input
+          id="cp-name"
           required
           value={form.name}
           onChange={(e) => setForm({ ...form, name: e.target.value })}
@@ -143,16 +144,18 @@ function CompanyProfileTab() {
         />
       </div>
       <div>
-        <label className="block text-xs font-bold mb-1.5">Telepon</label>
+        <label htmlFor="cp-phone" className="block text-xs font-bold mb-1.5">Telepon</label>
         <input
+          id="cp-phone"
           value={form.phone}
           onChange={(e) => setForm({ ...form, phone: e.target.value })}
           className="w-full border border-ums-border rounded-md px-3 py-2.5 text-sm"
         />
       </div>
       <div>
-        <label className="block text-xs font-bold mb-1.5">Email</label>
+        <label htmlFor="cp-email" className="block text-xs font-bold mb-1.5">Email</label>
         <input
+          id="cp-email"
           type="email"
           value={form.email}
           onChange={(e) => setForm({ ...form, email: e.target.value })}
@@ -160,8 +163,9 @@ function CompanyProfileTab() {
         />
       </div>
       <div>
-        <label className="block text-xs font-bold mb-1.5">Alamat</label>
+        <label htmlFor="cp-address" className="block text-xs font-bold mb-1.5">Alamat</label>
         <textarea
+          id="cp-address"
           value={form.address}
           onChange={(e) => setForm({ ...form, address: e.target.value })}
           rows={3}
@@ -169,8 +173,9 @@ function CompanyProfileTab() {
         />
       </div>
       <div>
-        <label className="block text-xs font-bold mb-1.5">URL Logo</label>
+        <label htmlFor="cp-logo-url" className="block text-xs font-bold mb-1.5">URL Logo</label>
         <input
+          id="cp-logo-url"
           value={form.logoUrl}
           onChange={(e) => setForm({ ...form, logoUrl: e.target.value })}
           placeholder="https://..."
@@ -238,8 +243,9 @@ function SecurityTab() {
         lama sampai kedaluwarsa.
       </p>
       <div>
-        <label className="block text-xs font-bold mb-1.5">Masa Berlaku Access Token (menit) *</label>
+        <label htmlFor="sec-access-ttl" className="block text-xs font-bold mb-1.5">Masa Berlaku Access Token (menit) *</label>
         <input
+          id="sec-access-ttl"
           required
           type="number"
           min={1}
@@ -251,8 +257,9 @@ function SecurityTab() {
         <p className="text-xs text-slate-400 mt-1">1 - 1440 menit (maks. 24 jam)</p>
       </div>
       <div>
-        <label className="block text-xs font-bold mb-1.5">Masa Berlaku Sesi / Refresh Token (hari) *</label>
+        <label htmlFor="sec-refresh-ttl" className="block text-xs font-bold mb-1.5">Masa Berlaku Sesi / Refresh Token (hari) *</label>
         <input
+          id="sec-refresh-ttl"
           required
           type="number"
           min={1}
@@ -337,8 +344,9 @@ function SmtpTab() {
       </p>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-xs font-bold mb-1.5">SMTP Host *</label>
+          <label htmlFor="smtp-host" className="block text-xs font-bold mb-1.5">SMTP Host *</label>
           <input
+            id="smtp-host"
             required
             value={form.host}
             onChange={(e) => setForm({ ...form, host: e.target.value })}
@@ -347,8 +355,9 @@ function SmtpTab() {
           />
         </div>
         <div>
-          <label className="block text-xs font-bold mb-1.5">Port *</label>
+          <label htmlFor="smtp-port" className="block text-xs font-bold mb-1.5">Port *</label>
           <input
+            id="smtp-port"
             required
             type="number"
             min={1}
@@ -366,8 +375,9 @@ function SmtpTab() {
         </label>
       </div>
       <div>
-        <label className="block text-xs font-bold mb-1.5">Username SMTP</label>
+        <label htmlFor="smtp-user" className="block text-xs font-bold mb-1.5">Username SMTP</label>
         <input
+          id="smtp-user"
           value={form.user || ""}
           onChange={(e) => setForm({ ...form, user: e.target.value })}
           className="w-full border border-ums-border rounded-md px-3 py-2.5 text-sm"
@@ -375,8 +385,9 @@ function SmtpTab() {
         />
       </div>
       <div>
-        <label className="block text-xs font-bold mb-1.5">Alamat Pengirim (From) *</label>
+        <label htmlFor="smtp-from" className="block text-xs font-bold mb-1.5">Alamat Pengirim (From) *</label>
         <input
+          id="smtp-from"
           required
           value={form.from}
           onChange={(e) => setForm({ ...form, from: e.target.value })}
@@ -482,8 +493,9 @@ function NotificationTemplatesTab() {
         )}
 
         <div>
-          <label className="block text-xs font-bold mb-1.5">Subjek Email *</label>
+          <label htmlFor="tpl-subject" className="block text-xs font-bold mb-1.5">Subjek Email *</label>
           <input
+            id="tpl-subject"
             required
             value={form.subject}
             onChange={(e) => setForm({ ...form, subject: e.target.value })}
@@ -491,8 +503,9 @@ function NotificationTemplatesTab() {
           />
         </div>
         <div>
-          <label className="block text-xs font-bold mb-1.5">Isi Email (HTML) *</label>
+          <label htmlFor="tpl-body" className="block text-xs font-bold mb-1.5">Isi Email (HTML) *</label>
           <textarea
+            id="tpl-body"
             required
             value={form.bodyHtml}
             onChange={(e) => setForm({ ...form, bodyHtml: e.target.value })}

@@ -1,0 +1,17 @@
+{
+  "name": "@ums/e2e",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.10.0",
+    "@playwright/test": "^1.47.0",
+    "@types/node": "^20.14.12",
+    "@ums/tsconfig": "workspace:*",
+    "typescript": "^5.5.4"
+  }
+}

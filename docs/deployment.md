@@ -51,8 +51,10 @@ Edit `.env.production` and replace every `CHANGE_ME`. Generate strong secrets wi
 openssl rand -hex 32
 ```
 
-At minimum you must set: `POSTGRES_PASSWORD`, `SESSION_SECRET`, `CSRF_SECRET`,
-`S3_ACCESS_KEY`, `S3_SECRET_KEY`. Update `APP_URL` / `API_URL` /
+At minimum you must set: `POSTGRES_PASSWORD`, `SESSION_SECRET`,
+`S3_ACCESS_KEY`, `S3_SECRET_KEY`. The API now refuses to start in production
+if `SESSION_SECRET` is left at its development default, so this isn't
+optional. Update `APP_URL` / `API_URL` /
 `NEXT_PUBLIC_API_URL` once you know the server's real address (IP or domain) —
 `APP_URL` in particular must match exactly what the browser uses, or
 cookie/CORS checks will reject logins.
@@ -139,11 +141,12 @@ docker-compose.prod.yml up -d --build` again (web needs a rebuild since
   gap noted earlier in this project, not something this deploy setup changes).
   Redis is still started because `bullmq`/`ioredis` are already dependencies
   and future work is expected to wire it up.
-- **Backups are your responsibility.** `postgres_data`, `minio_data`, and
-  `redis_data` are named Docker volumes — back them up on whatever schedule
-  matches your data's value (`docker run --rm -v ums_postgres_data:/data ...`
-  or `pg_dump` from inside the `postgres` container). Nothing here automates
-  that yet.
+- **Backups**: PostgreSQL and MinIO are backed up by scripts in
+  `infra/scripts/` (`backup-postgres.sh`, `backup-minio.sh`), meant to run
+  daily via cron. See [backup-restore-runbook.md](./backup-restore-runbook.md)
+  for setup, restore drills, and the real-restore procedure — including the
+  current gap (backups are local-to-the-box until an off-box copy step is
+  added).
 - **This is a single-box deployment.** No horizontal scaling, no managed DB.
   Fine for an internal tool at moderate load; revisit before it needs to
   survive that one Ubuntu box going down.

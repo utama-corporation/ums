@@ -8,6 +8,7 @@ import { env } from "@ums/config";
 import { prisma } from "@ums/db";
 import { NotFoundError, ForbiddenError } from "../errors/AppError.js";
 import { logAuditEvent } from "./auditService.js";
+import { assertMemoViewScope } from "./memoDraftService.js";
 import { UserProfile } from "@ums/contracts";
 
 export interface SignatureResult {
@@ -224,12 +225,14 @@ export async function publishMemo(memoId: string, publisher: UserProfile, ipAddr
   });
 }
 
-export async function getCanonicalPdfDownloadUrl(memoId: string) {
+export async function getCanonicalPdfDownloadUrl(memoId: string, actor: UserProfile) {
   const publication = await prisma.documentPublication.findUnique({
     where: { memoId },
-    include: { memo: true },
+    include: { memo: { include: { recipients: true } } },
   });
   if (!publication) throw new NotFoundError("Published document not found for this memo");
+
+  assertMemoViewScope(publication.memo, actor);
 
   const getCommand = new GetObjectCommand({
     Bucket: env.S3_BUCKET,

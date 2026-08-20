@@ -38,7 +38,6 @@ export const envSchema = z.object({
   REDIS_PASSWORD: z.string().optional().default(""),
 
   SESSION_SECRET: z.string().min(16).default("dev_super_secret_session_key_change_in_production_32chars"),
-  CSRF_SECRET: z.string().min(16).default("dev_super_secret_csrf_key_change_in_production_32chars"),
 
   // Overrides the auth cookies' `Secure` flag independently of NODE_ENV. Browsers silently
   // drop `Secure` cookies on plain HTTP, so a production deploy not yet behind HTTPS needs
@@ -72,12 +71,27 @@ export const envSchema = z.object({
 
 export type Env = z.infer<typeof envSchema>;
 
+const DEFAULT_SESSION_SECRET = "dev_super_secret_session_key_change_in_production_32chars";
+
 export function validateEnv(): Env {
   const result = envSchema.safeParse(process.env);
   if (!result.success) {
     console.error("Invalid environment variables:", JSON.stringify(result.error.format(), null, 2));
     throw new Error("Invalid environment configuration.");
   }
+
+  // The dev default is checked into source control, so it's a known value —
+  // if it's still active in production, every JWT this process ever signs or
+  // verifies can be forged by anyone. Docker Compose already refuses to boot
+  // without POSTGRES_PASSWORD/S3_ACCESS_KEY/S3_SECRET_KEY set (`${VAR:?...}`);
+  // this closes the same gap for SESSION_SECRET, which had no such guard.
+  if (result.data.NODE_ENV === "production" && result.data.SESSION_SECRET === DEFAULT_SESSION_SECRET) {
+    throw new Error(
+      "SESSION_SECRET is still set to the development default in a production environment. " +
+        "Set a real secret in .env.production (e.g. `openssl rand -hex 32`) before starting the API."
+    );
+  }
+
   return result.data;
 }
 

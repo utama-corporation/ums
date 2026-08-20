@@ -5,6 +5,32 @@ import { sanitizeMemoHtml } from "./sanitizerService.js";
 import { logAuditEvent } from "./auditService.js";
 import { UserProfile } from "@ums/contracts";
 
+export function isMemoAuthorOrAdmin(memo: { authorId: string }, user: UserProfile): boolean {
+  return memo.authorId === user.id || user.roles.includes("SUPER_ADMIN") || user.roles.includes("MEMO_ADMIN");
+}
+
+/**
+ * Same confidentiality/scope rule getMemoDetail() has always enforced for CONFIDENTIAL and
+ * HIGHLY_CONFIDENTIAL memos — factored out so attachment downloads and canonical-PDF downloads
+ * (which expose the same content, arguably more directly) apply the identical check instead of
+ * skipping it entirely.
+ */
+export function assertMemoViewScope(
+  memo: { authorId: string; classification: string; recipients: { partyId: string | null }[] },
+  user: UserProfile
+): void {
+  if (memo.classification !== "CONFIDENTIAL" && memo.classification !== "HIGHLY_CONFIDENTIAL") return;
+
+  const isAuthor = memo.authorId === user.id;
+  const isAdmin = user.roles.includes("SUPER_ADMIN") || user.roles.includes("MEMO_ADMIN");
+  const isRecipientUser = memo.recipients.some((r) => r.partyId === user.id);
+  const isRecipientDept = memo.recipients.some((r) => r.partyId === user.departmentId);
+
+  if (!isAuthor && !isAdmin && !isRecipientUser && !isRecipientDept) {
+    throw new ForbiddenError("Access denied: Confidential memo");
+  }
+}
+
 export function calculateMemoCapabilities(memo: { authorId: string; status: string }, user: UserProfile) {
   const isAuthor = memo.authorId === user.id;
   const isDraft = ["DRAFT", "REVISION"].includes(memo.status);
@@ -96,12 +122,16 @@ export async function createDraft(input: MemoCreateDraftInput, authorId: string)
   return memo;
 }
 
-export async function updateDraft(memoId: string, input: MemoUpdateDraftInput, actorId: string) {
+export async function updateDraft(memoId: string, input: MemoUpdateDraftInput, actor: UserProfile) {
   const memo = await prisma.memo.findUnique({
     where: { id: memoId },
     include: { contentVersions: true },
   });
   if (!memo) throw new NotFoundError("Memo draft not found");
+
+  if (!isMemoAuthorOrAdmin(memo, actor)) {
+    throw new ForbiddenError("Only the memo's author can edit this draft");
+  }
 
   if (!["DRAFT", "REVISION"].includes(memo.status)) {
     throw new ForbiddenError("Only DRAFT or REVISION memos can be updated");
@@ -157,7 +187,7 @@ export async function updateDraft(memoId: string, input: MemoUpdateDraftInput, a
     await prisma.memoContentVersion.upsert({
       where: { memoId_version: { memoId, version: latestVersion } },
       update: { bodyHtml: updatedBodyHtml },
-      create: { memoId, version: latestVersion, bodyHtml: updatedBodyHtml, createdById: actorId },
+      create: { memoId, version: latestVersion, bodyHtml: updatedBodyHtml, createdById: actor.id },
     });
   }
 
@@ -183,9 +213,13 @@ export async function updateDraft(memoId: string, input: MemoUpdateDraftInput, a
   return updated;
 }
 
-export async function autosaveDraft(memoId: string, input: MemoAutosaveInput, actorId: string) {
+export async function autosaveDraft(memoId: string, input: MemoAutosaveInput, actor: UserProfile) {
   const memo = await prisma.memo.findUnique({ where: { id: memoId } });
   if (!memo) throw new NotFoundError("Memo draft not found");
+
+  if (!isMemoAuthorOrAdmin(memo, actor)) {
+    throw new ForbiddenError("Only the memo's author can autosave this draft");
+  }
 
   if (!["DRAFT", "REVISION"].includes(memo.status)) {
     throw new ForbiddenError("Autosave is only permitted on DRAFT or REVISION memos");
@@ -201,7 +235,7 @@ export async function autosaveDraft(memoId: string, input: MemoAutosaveInput, ac
   await prisma.memoContentVersion.upsert({
     where: { memoId_version: { memoId, version: memo.currentVersion } },
     update: { bodyHtml: sanitized },
-    create: { memoId, version: memo.currentVersion, bodyHtml: sanitized, createdById: actorId },
+    create: { memoId, version: memo.currentVersion, bodyHtml: sanitized, createdById: actor.id },
   });
 
   const updated = await prisma.memo.update({
@@ -231,17 +265,7 @@ export async function getMemoDetail(memoId: string, user: UserProfile) {
     throw new NotFoundError("Memo not found");
   }
 
-  // Confidentiality & Scope check
-  const isAuthor = memo.authorId === user.id;
-  const isAdmin = user.roles.includes("SUPER_ADMIN") || user.roles.includes("MEMO_ADMIN");
-  const isRecipientUser = memo.recipients.some((r) => r.partyId === user.id);
-  const isRecipientDept = memo.recipients.some((r) => r.partyId === user.departmentId);
-
-  if (memo.classification === "CONFIDENTIAL" || memo.classification === "HIGHLY_CONFIDENTIAL") {
-    if (!isAuthor && !isAdmin && !isRecipientUser && !isRecipientDept) {
-      throw new ForbiddenError("Access denied: Confidential memo");
-    }
-  }
+  assertMemoViewScope(memo, user);
 
   const capabilities = calculateMemoCapabilities(memo, user);
 
@@ -251,7 +275,7 @@ export async function getMemoDetail(memoId: string, user: UserProfile) {
   };
 }
 
-export async function copyDraft(memoId: string, authorId: string) {
+export async function copyDraft(memoId: string, actor: UserProfile) {
   const source = await prisma.memo.findUnique({
     where: { id: memoId },
     include: {
@@ -262,6 +286,10 @@ export async function copyDraft(memoId: string, authorId: string) {
     },
   });
   if (!source) throw new NotFoundError("Source memo not found");
+
+  // Copying exposes the full body/recipients of the source memo into a new
+  // draft the caller owns — must be at least as strict as viewing it.
+  assertMemoViewScope(source, actor);
 
   const latestContent = source.contentVersions[0]?.bodyHtml || "";
 
@@ -278,6 +306,6 @@ export async function copyDraft(memoId: string, authorId: string) {
       recipients: source.recipients.map((r): MemoPartyInput => ({ partyType: r.partyType as "USER" | "DEPARTMENT" | "EXTERNAL", partyId: r.partyId, displayName: r.displayName, email: r.email })),
       ccs: source.ccs.map((c): MemoPartyInput => ({ partyType: c.partyType as "USER" | "DEPARTMENT" | "EXTERNAL", partyId: c.partyId, displayName: c.displayName })),
     },
-    authorId
+    actor.id
   );
 }

@@ -4,6 +4,8 @@ import { env } from "@ums/config";
 import { prisma } from "@ums/db";
 import { BadRequestError, NotFoundError, ForbiddenError } from "../errors/AppError.js";
 import { logAuditEvent } from "./auditService.js";
+import { isMemoAuthorOrAdmin, assertMemoViewScope } from "./memoDraftService.js";
+import { UserProfile } from "@ums/contracts";
 import crypto from "crypto";
 
 export const s3Client = new S3Client({
@@ -29,7 +31,7 @@ export async function initiateAttachmentUpload(
   fileName: string,
   fileSize: number,
   mimeType: string,
-  actorId: string
+  actor: UserProfile
 ) {
   if (!ALLOWED_MIME_TYPES.includes(mimeType)) {
     throw new BadRequestError(`MIME type '${mimeType}' is not allowed. Allowed types: PDF, DOCX, XLSX, PNG, JPEG.`);
@@ -37,12 +39,22 @@ export async function initiateAttachmentUpload(
 
   const memo = await prisma.memo.findUnique({ where: { id: memoId } });
   if (!memo) throw new NotFoundError("Memo not found");
+
+  if (!isMemoAuthorOrAdmin(memo, actor)) {
+    throw new ForbiddenError("Only the memo's author can add attachments to it");
+  }
+
   if (!["DRAFT", "REVISION"].includes(memo.status)) {
     throw new ForbiddenError("Attachments can only be added to DRAFT or REVISION memos");
   }
 
-  const fileExt = fileName.includes(".") ? fileName.split(".").pop() : "bin";
-  const objectKey = `memos/${memoId}/${crypto.randomUUID()}.${fileExt}`;
+  // Only take a short alphanumeric extension from the client-supplied filename — it's
+  // otherwise attacker-controlled and was previously usable to inject `/`/`..` into the
+  // S3 object key (e.g. "x.png/../../other-memo/y") and place objects outside this
+  // memo's folder in the shared bucket.
+  const rawExt = fileName.includes(".") ? fileName.split(".").pop() ?? "" : "";
+  const safeExt = /^[a-zA-Z0-9]{1,10}$/.test(rawExt) ? rawExt : "bin";
+  const objectKey = `memos/${memoId}/${crypto.randomUUID()}.${safeExt}`;
 
   const attachmentObj = await prisma.attachmentObject.create({
     data: {
@@ -71,7 +83,7 @@ export async function initiateAttachmentUpload(
   const uploadUrl = await getSignedUrl(s3Client, putCommand, { expiresIn: 900 }); // 15 mins
 
   await logAuditEvent({
-    actorId,
+    actorId: actor.id,
     action: "ATTACHMENT_INITIATED",
     module: "storage",
     resourceType: "AttachmentObject",
@@ -88,12 +100,20 @@ export async function initiateAttachmentUpload(
 export async function completeAttachmentUpload(
   attachmentId: string,
   checksumSha256: string,
-  actorId: string
+  actor: UserProfile
 ) {
   const attachmentObj = await prisma.attachmentObject.findUnique({
     where: { id: attachmentId },
   });
   if (!attachmentObj) throw new NotFoundError("Attachment object not found");
+
+  const owningLink = await prisma.memoAttachment.findFirst({
+    where: { attachmentObjectId: attachmentId },
+    include: { memo: true },
+  });
+  if (!owningLink || !isMemoAuthorOrAdmin(owningLink.memo, actor)) {
+    throw new ForbiddenError("Only the memo's author can finalize this attachment");
+  }
 
   try {
     const headCommand = new HeadObjectCommand({
@@ -114,7 +134,7 @@ export async function completeAttachmentUpload(
   });
 
   await logAuditEvent({
-    actorId,
+    actorId: actor.id,
     action: "ATTACHMENT_COMPLETED",
     module: "storage",
     resourceType: "AttachmentObject",
@@ -124,13 +144,20 @@ export async function completeAttachmentUpload(
   return updated;
 }
 
-export async function getAttachmentDownloadUrl(attachmentId: string, actorId: string) {
+export async function getAttachmentDownloadUrl(attachmentId: string, actor: UserProfile) {
   const attachmentObj = await prisma.attachmentObject.findUnique({
     where: { id: attachmentId },
   });
   if (!attachmentObj || attachmentObj.status !== "READY") {
     throw new NotFoundError("Ready attachment not found");
   }
+
+  const owningLink = await prisma.memoAttachment.findFirst({
+    where: { attachmentObjectId: attachmentId },
+    include: { memo: { include: { recipients: true } } },
+  });
+  if (!owningLink) throw new NotFoundError("Ready attachment not found");
+  assertMemoViewScope(owningLink.memo, actor);
 
   const getCommand = new GetObjectCommand({
     Bucket: env.S3_BUCKET,
@@ -141,7 +168,7 @@ export async function getAttachmentDownloadUrl(attachmentId: string, actorId: st
   const downloadUrl = await getSignedUrl(s3Client, getCommand, { expiresIn: 900 });
 
   await logAuditEvent({
-    actorId,
+    actorId: actor.id,
     action: "ATTACHMENT_DOWNLOADED",
     module: "storage",
     resourceType: "AttachmentObject",
@@ -151,12 +178,16 @@ export async function getAttachmentDownloadUrl(attachmentId: string, actorId: st
   return { downloadUrl, fileName: attachmentObj.fileName, mimeType: attachmentObj.mimeType };
 }
 
-export async function removeAttachment(attachmentId: string, actorId: string) {
+export async function removeAttachment(attachmentId: string, actor: UserProfile) {
   const memoAttachment = await prisma.memoAttachment.findFirst({
     where: { attachmentObjectId: attachmentId },
     include: { memo: true, attachmentObject: true },
   });
   if (!memoAttachment) throw new NotFoundError("Attachment relation not found");
+
+  if (!isMemoAuthorOrAdmin(memoAttachment.memo, actor)) {
+    throw new ForbiddenError("Only the memo's author can delete this attachment");
+  }
 
   if (!["DRAFT", "REVISION"].includes(memoAttachment.memo.status)) {
     throw new ForbiddenError("Attachments cannot be deleted from non-draft memos");
@@ -179,7 +210,7 @@ export async function removeAttachment(attachmentId: string, actorId: string) {
   }
 
   await logAuditEvent({
-    actorId,
+    actorId: actor.id,
     action: "ATTACHMENT_DELETED",
     module: "storage",
     resourceType: "AttachmentObject",

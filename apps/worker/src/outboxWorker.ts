@@ -2,6 +2,7 @@ import { prisma } from "@ums/db";
 import { sendEmailNotification } from "./mailer.js";
 import { processExportRequested, ExportRequestedPayload } from "./exportWorker.js";
 import { renderEmailTemplate } from "./emailTemplates.js";
+import { createPollingLoop, PollingLoop } from "./pollingLoop.js";
 
 async function notifyUsers(
   userIds: string[],
@@ -245,13 +246,6 @@ export async function runOutboxWorkerCycle(): Promise<number> {
   return events.length;
 }
 
-export function startOutboxWorkerLoop(pollIntervalMs = 5000) {
-  console.log(`[OUTBOX_WORKER] Starting outbox polling loop (interval: ${pollIntervalMs}ms)...`);
-  setInterval(async () => {
-    try {
-      await runOutboxWorkerCycle();
-    } catch (err) {
-      console.error("[OUTBOX_WORKER_LOOP_ERROR]", err);
-    }
-  }, pollIntervalMs);
+export function createOutboxWorkerLoop(pollIntervalMs = 5000): PollingLoop {
+  return createPollingLoop("OUTBOX_WORKER", pollIntervalMs, runOutboxWorkerCycle);
 }

@@ -33,6 +33,9 @@ logs
 # Prisma / DB
 packages/db/generated
 
+# Local database/attachment backups (see docs/backup-restore-runbook.md)
+/backups/
+
 # OS & IDE
 .DS_Store
 Thumbs.db
@@ -47,3 +50,7 @@ Thumbs.db
 # Testing
 coverage
 .nyc_output
+apps/e2e/test-results
+apps/e2e/playwright-report
+apps/e2e/blob-report
+apps/e2e/.auth

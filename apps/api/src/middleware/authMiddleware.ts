@@ -81,3 +81,37 @@ export const authRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+// Refresh happens automatically every ~15 minutes for every active session (access tokens are
+// short-lived by design), so many legitimate users behind one shared office IP/NAT can
+// plausibly exceed a login-strength limit here — this exists to blunt scripted refresh-token
+// guessing/replay, not to throttle normal traffic, hence the much higher ceiling than login.
+export const refreshRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 120,
+  message: {
+    success: false,
+    error: {
+      code: "TOO_MANY_REQUESTS",
+      message: "Too many token refresh attempts. Please try again later.",
+    },
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Password reset sets new credentials — infrequent, sensitive, already admin-gated by
+// requirePermission("master.user.manage"), but still worth throttling per IP.
+export const passwordResetRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  message: {
+    success: false,
+    error: {
+      code: "TOO_MANY_REQUESTS",
+      message: "Too many password reset attempts. Please try again later.",
+    },
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});

@@ -44,7 +44,7 @@ publicationRouter.post("/memos/:id/publish", authenticate, requirePermission("me
 // Download Canonical PDF
 publicationRouter.get("/memos/:id/canonical-pdf", authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const result = await getCanonicalPdfDownloadUrl(req.params.id);
+    const result = await getCanonicalPdfDownloadUrl(req.params.id, req.user!);
     res.status(200).json({
       success: true,
       data: result,

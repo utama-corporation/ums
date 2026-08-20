@@ -1,4 +1,5 @@
 import { prisma } from "@ums/db";
+import { createPollingLoop, PollingLoop } from "./pollingLoop.js";
 
 export async function runTaskOverdueCycle(): Promise<number> {
   const now = new Date();
@@ -50,13 +51,6 @@ export async function runTaskOverdueCycle(): Promise<number> {
   return overdueTasks.length;
 }
 
-export function startTaskOverdueLoop(intervalMs = 15 * 60 * 1000) {
-  console.log(`[TASK_OVERDUE] Starting overdue task check loop (interval: ${intervalMs}ms)...`);
-  setInterval(async () => {
-    try {
-      await runTaskOverdueCycle();
-    } catch (err) {
-      console.error("[TASK_OVERDUE_LOOP_ERROR]", err);
-    }
-  }, intervalMs);
+export function createTaskOverdueLoop(intervalMs = 15 * 60 * 1000): PollingLoop {
+  return createPollingLoop("TASK_OVERDUE", intervalMs, runTaskOverdueCycle);
 }

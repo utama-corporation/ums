@@ -108,28 +108,28 @@ export default function CreateMemoPage() {
           <CardHead title="1. Informasi Memo" />
           <div className="grid md:grid-cols-3 gap-3.5">
             <div>
-              <label className="block text-xs font-bold mb-1.5">Nomor Memo</label>
-              <input disabled value="Akan dibuat otomatis" className="w-full border border-ums-border rounded-md px-3 py-2.5 text-sm bg-slate-50 text-slate-400" />
+              <label htmlFor="memo-number" className="block text-xs font-bold mb-1.5">Nomor Memo</label>
+              <input id="memo-number" disabled value="Akan dibuat otomatis" className="w-full border border-ums-border rounded-md px-3 py-2.5 text-sm bg-slate-50 text-slate-400" />
             </div>
             <div>
-              <label className="block text-xs font-bold mb-1.5">Kategori *</label>
-              <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="w-full border border-ums-border rounded-md px-3 py-2.5 text-sm">
+              <label htmlFor="memo-category" className="block text-xs font-bold mb-1.5">Kategori *</label>
+              <select id="memo-category" value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="w-full border border-ums-border rounded-md px-3 py-2.5 text-sm">
                 {categories.map((c) => (
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="block text-xs font-bold mb-1.5">Jenis Memo *</label>
-              <select value={memoTypeId} onChange={(e) => setMemoTypeId(e.target.value)} className="w-full border border-ums-border rounded-md px-3 py-2.5 text-sm">
+              <label htmlFor="memo-type" className="block text-xs font-bold mb-1.5">Jenis Memo *</label>
+              <select id="memo-type" value={memoTypeId} onChange={(e) => setMemoTypeId(e.target.value)} className="w-full border border-ums-border rounded-md px-3 py-2.5 text-sm">
                 {types.map((t) => (
                   <option key={t.id} value={t.id}>{t.name}</option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="block text-xs font-bold mb-1.5">Prioritas</label>
-              <select value={priority} onChange={(e) => setPriority(e.target.value)} className="w-full border border-ums-border rounded-md px-3 py-2.5 text-sm">
+              <label htmlFor="memo-priority" className="block text-xs font-bold mb-1.5">Prioritas</label>
+              <select id="memo-priority" value={priority} onChange={(e) => setPriority(e.target.value)} className="w-full border border-ums-border rounded-md px-3 py-2.5 text-sm">
                 <option value="NORMAL">Normal</option>
                 <option value="IMPORTANT">Penting</option>
                 <option value="URGENT">Mendesak</option>
@@ -137,8 +137,8 @@ export default function CreateMemoPage() {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-bold mb-1.5">Klasifikasi</label>
-              <select value={classification} onChange={(e) => setClassification(e.target.value)} className="w-full border border-ums-border rounded-md px-3 py-2.5 text-sm">
+              <label htmlFor="memo-classification" className="block text-xs font-bold mb-1.5">Klasifikasi</label>
+              <select id="memo-classification" value={classification} onChange={(e) => setClassification(e.target.value)} className="w-full border border-ums-border rounded-md px-3 py-2.5 text-sm">
                 <option value="GENERAL">Umum</option>
                 <option value="INTERNAL">Internal</option>
                 <option value="CONFIDENTIAL">Rahasia</option>
@@ -152,8 +152,8 @@ export default function CreateMemoPage() {
           <CardHead title="2. Penerima" />
           <div className="grid md:grid-cols-2 gap-3.5">
             <div>
-              <label className="block text-xs font-bold mb-1.5">Departemen Penerima *</label>
-              <select value={recipientDeptId} onChange={(e) => setRecipientDeptId(e.target.value)} className="w-full border border-ums-border rounded-md px-3 py-2.5 text-sm">
+              <label htmlFor="memo-recipient-dept" className="block text-xs font-bold mb-1.5">Departemen Penerima *</label>
+              <select id="memo-recipient-dept" value={recipientDeptId} onChange={(e) => setRecipientDeptId(e.target.value)} className="w-full border border-ums-border rounded-md px-3 py-2.5 text-sm">
                 {departments.map((d) => (
                   <option key={d.id} value={d.id}>{d.name}</option>
                 ))}
@@ -168,8 +168,9 @@ export default function CreateMemoPage() {
 
         <Card>
           <CardHead title="3. Isi Memo" />
-          <label className="block text-xs font-bold mb-1.5">Judul / Perihal *</label>
+          <label htmlFor="memo-title" className="block text-xs font-bold mb-1.5">Judul / Perihal *</label>
           <input
+            id="memo-title"
             type="text"
             required
             value={title}
@@ -177,10 +178,11 @@ export default function CreateMemoPage() {
             className="w-full border border-ums-border rounded-md px-3 py-2.5 text-sm mb-3.5"
             placeholder="Masukkan judul memo"
           />
-          <label className="block text-xs font-bold mb-1.5">Isi Memo</label>
+          <label htmlFor="memo-body" className="block text-xs font-bold mb-1.5">Isi Memo</label>
           <div className="border border-ums-border rounded-lg overflow-hidden">
             <div className="p-2 bg-slate-50 border-b border-ums-border text-xs text-slate-500">Format teks dasar (HTML disanitasi otomatis)</div>
             <textarea
+              id="memo-body"
               value={bodyHtml}
               onChange={(e) => setBodyHtml(e.target.value)}
               rows={8}

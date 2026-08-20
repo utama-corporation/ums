@@ -8,7 +8,7 @@ export const attachmentsRouter: Router = Router();
 attachmentsRouter.post("/:id/complete", authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const input = AttachmentCompleteSchema.parse(req.body);
-    const completed = await completeAttachmentUpload(req.params.id, input.checksumSha256, req.user!.id);
+    const completed = await completeAttachmentUpload(req.params.id, input.checksumSha256, req.user!);
     res.status(200).json({ success: true, message: "Attachment marked ready", data: completed });
   } catch (error) {
     next(error);
@@ -17,7 +17,7 @@ attachmentsRouter.post("/:id/complete", authenticate, async (req: Request, res: 
 
 attachmentsRouter.get("/:id/download", authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const result = await getAttachmentDownloadUrl(req.params.id, req.user!.id);
+    const result = await getAttachmentDownloadUrl(req.params.id, req.user!);
     res.status(200).json({ success: true, data: result });
   } catch (error) {
     next(error);
@@ -26,7 +26,7 @@ attachmentsRouter.get("/:id/download", authenticate, async (req: Request, res: R
 
 attachmentsRouter.delete("/:id", authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    await removeAttachment(req.params.id, req.user!.id);
+    await removeAttachment(req.params.id, req.user!);
     res.status(200).json({ success: true, message: "Attachment deleted successfully" });
   } catch (error) {
     next(error);

@@ -2,6 +2,7 @@ import { prisma } from "@ums/db";
 import { NotFoundError } from "../errors/AppError.js";
 import { EmailTemplateUpdateInput } from "@ums/contracts";
 import { logAuditEvent } from "./auditService.js";
+import { sanitizeMemoHtml } from "./sanitizerService.js";
 
 // Single source of truth for which notification types exist, which placeholder
 // variables each one exposes, and the default copy that ships out of the box
@@ -67,10 +68,17 @@ export async function updateEmailTemplate(notificationType: string, input: Email
 
   const before = await prisma.emailTemplate.findUnique({ where: { notificationType } });
 
+  // Same allowlist sanitizer as memo bodies — this HTML is rendered via
+  // dangerouslySetInnerHTML in the Settings preview (and interpreted by
+  // recipients' mail clients), so it can't be trusted raw even though only
+  // settings.manage holders can submit it — one compromised/malicious admin
+  // account shouldn't be able to run script in every other admin's session.
+  const sanitizedBodyHtml = sanitizeMemoHtml(input.bodyHtml);
+
   const updated = await prisma.emailTemplate.upsert({
     where: { notificationType },
-    update: { subject: input.subject, bodyHtml: input.bodyHtml },
-    create: { notificationType, subject: input.subject, bodyHtml: input.bodyHtml },
+    update: { subject: input.subject, bodyHtml: sanitizedBodyHtml },
+    create: { notificationType, subject: input.subject, bodyHtml: sanitizedBodyHtml },
   });
 
   await logAuditEvent({

@@ -1,5 +1,6 @@
 import { prisma } from "@ums/db";
 import { env } from "@ums/config";
+import { createPollingLoop, PollingLoop } from "./pollingLoop.js";
 
 interface ExternalEmployeeRaw {
   EmployeeID: number;
@@ -97,13 +98,6 @@ export async function runEmployeeSyncCycle(): Promise<void> {
   );
 }
 
-export function startEmployeeSyncLoop(intervalMs = 6 * 60 * 60 * 1000) {
-  console.log(`[EMPLOYEE_SYNC] Starting scheduled employee sync loop (interval: ${intervalMs}ms)...`);
-  setInterval(async () => {
-    try {
-      await runEmployeeSyncCycle();
-    } catch (err) {
-      console.error("[EMPLOYEE_SYNC_LOOP_ERROR]", err);
-    }
-  }, intervalMs);
+export function createEmployeeSyncLoop(intervalMs = 6 * 60 * 60 * 1000): PollingLoop {
+  return createPollingLoop("EMPLOYEE_SYNC", intervalMs, runEmployeeSyncCycle);
 }

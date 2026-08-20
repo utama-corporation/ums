@@ -92,7 +92,7 @@ memosRouter.get(`/${UUID_ID}`, authenticate, async (req: Request, res: Response,
 memosRouter.patch(`/${UUID_ID}`, authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const input = MemoUpdateDraftSchema.parse(req.body);
-    const updated = await updateDraft(req.params.id, input, req.user!.id);
+    const updated = await updateDraft(req.params.id, input, req.user!);
     res.status(200).json({ success: true, message: "Draft updated successfully", data: updated });
   } catch (error) {
     next(error);
@@ -102,7 +102,7 @@ memosRouter.patch(`/${UUID_ID}`, authenticate, async (req: Request, res: Respons
 memosRouter.post(`/${UUID_ID}/autosave`, authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const input = MemoAutosaveSchema.parse(req.body);
-    const result = await autosaveDraft(req.params.id, input, req.user!.id);
+    const result = await autosaveDraft(req.params.id, input, req.user!);
     res.status(200).json({ success: true, message: "Autosaved", data: result });
   } catch (error) {
     next(error);
@@ -122,7 +122,7 @@ memosRouter.get(`/${UUID_ID}/capabilities`, authenticate, async (req: Request, r
 
 memosRouter.post(`/${UUID_ID}/copy`, authenticate, requirePermission("memo.create"), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const copied = await copyDraft(req.params.id, req.user!.id);
+    const copied = await copyDraft(req.params.id, req.user!);
     res.status(201).json({ success: true, message: "Memo copied as new draft", data: copied });
   } catch (error) {
     next(error);
@@ -159,7 +159,7 @@ memosRouter.post(`/${UUID_ID}/restore`, authenticate, requirePermission("memo.ar
 memosRouter.post(`/${UUID_ID}/attachments/initiate`, authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const input = AttachmentInitiateSchema.parse(req.body);
-    const result = await initiateAttachmentUpload(req.params.id, input.fileName, input.fileSize, input.mimeType, req.user!.id);
+    const result = await initiateAttachmentUpload(req.params.id, input.fileName, input.fileSize, input.mimeType, req.user!);
     res.status(201).json({ success: true, data: result });
   } catch (error) {
     next(error);
