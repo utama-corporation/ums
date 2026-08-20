@@ -23,6 +23,7 @@ RUN pnpm turbo build --filter=@ums/web...
 FROM base AS runner
 ENV NODE_ENV=production
 ENV PORT=5000
+ENV HOSTNAME=0.0.0.0
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 webuser
 COPY --from=builder --chown=webuser:nodejs /app/apps/web/.next/standalone ./
 COPY --from=builder --chown=webuser:nodejs /app/apps/web/.next/static ./apps/web/.next/static
