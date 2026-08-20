@@ -88,7 +88,7 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-ums_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ums_db}?schema=public
     entrypoint: []
-    command: ["node", "packages/db/node_modules/.bin/prisma", "migrate", "deploy", "--schema", "packages/db/prisma/schema.prisma"]
+    command: ["packages/db/node_modules/.bin/prisma", "migrate", "deploy", "--schema", "packages/db/prisma/schema.prisma"]
     restart: "no"
 
   api:
