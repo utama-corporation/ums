@@ -55,7 +55,7 @@ export default function LoginPage() {
           )}
 
           <form onSubmit={handleLogin}>
-            <label className="block text-[#251f27] font-bold text-[13px] mb-1.5">Username</label>
+            <label className="block text-[#251f27] font-bold text-[13px] mb-1.5">NIK / Username</label>
             <input
               type="text"
               required
@@ -63,7 +63,7 @@ export default function LoginPage() {
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               className="w-full p-3 rounded-md border-0 mb-3 bg-white text-[#101828] placeholder:text-slate-400"
-              placeholder="admin"
+              placeholder="NIK Anda, atau username untuk admin"
             />
 
             <label className="block text-[#251f27] font-bold text-[13px] mb-1.5">Password</label>

@@ -177,6 +177,7 @@ export default function MasterUsersPage() {
     const matchedCompany = companies.find((c) => c.code === e.companyCode);
     setForm((f) => ({
       ...f,
+      username: e.nik,
       fullName: e.fullName,
       employeeId: e.nik,
       email: e.email || f.email,
@@ -418,7 +419,8 @@ export default function MasterUsersPage() {
                   </div>
                 )}
                 <p className="text-xs text-slate-400 mt-1">
-                  Pilih karyawan untuk mengisi otomatis Nama, NIK, Email, No. HP &amp; Perusahaan. Field lain tetap bisa diisi manual.
+                  Pilih karyawan untuk mengisi otomatis Username (= NIK), Nama, NIK, Email, No. HP &amp; Perusahaan. User akan login memakai
+                  NIK ini. Field lain tetap bisa diisi/diubah manual.
                 </p>
               </div>
             )}
