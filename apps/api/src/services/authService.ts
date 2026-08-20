@@ -5,6 +5,7 @@ import crypto from "crypto";
 import { env } from "@ums/config";
 import { UnauthorizedError, ForbiddenError } from "../errors/AppError.js";
 import { logAuditEvent } from "./auditService.js";
+import { getSecurityPolicy } from "./settingsService.js";
 import { UserProfile } from "@ums/contracts";
 
 export interface TokenPayload {
@@ -17,8 +18,8 @@ export function hashString(input: string): string {
   return crypto.createHash("sha256").update(input).digest("hex");
 }
 
-export function generateAccessToken(payload: TokenPayload): string {
-  return jwt.sign(payload, env.SESSION_SECRET, { expiresIn: "15m" });
+export function generateAccessToken(payload: TokenPayload, accessTokenTtlMinutes: number): string {
+  return jwt.sign(payload, env.SESSION_SECRET, { expiresIn: `${accessTokenTtlMinutes}m` });
 }
 
 export function generateRefreshToken(): string {
@@ -62,6 +63,7 @@ export async function loginUser(username: string, passwordPlain: string, ipAddre
     throw new UnauthorizedError("Invalid username or password");
   }
 
+  const policy = await getSecurityPolicy();
   const rawRefreshToken = generateRefreshToken();
   const refreshTokenHash = hashString(rawRefreshToken);
 
@@ -71,7 +73,7 @@ export async function loginUser(username: string, passwordPlain: string, ipAddre
       refreshTokenHash,
       ipAddress,
       userAgent,
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+      expiresAt: new Date(Date.now() + policy.refreshTokenTtlDays * 24 * 60 * 60 * 1000),
     },
   });
 
@@ -89,7 +91,7 @@ export async function loginUser(username: string, passwordPlain: string, ipAddre
     userAgent,
   });
 
-  const accessToken = generateAccessToken({ userId: user.id, email: user.email, sessionId: session.id });
+  const accessToken = generateAccessToken({ userId: user.id, email: user.email, sessionId: session.id }, policy.accessTokenTtlMinutes);
 
   return { accessToken, refreshToken: rawRefreshToken, session };
 }
@@ -123,6 +125,8 @@ export async function refreshSession(rawRefreshToken: string, ipAddress?: string
     throw new ForbiddenError("Refresh token revoked or expired. All sessions terminated.");
   }
 
+  const policy = await getSecurityPolicy();
+
   // Rotate token
   const newRawRefreshToken = generateRefreshToken();
   const newHash = hashString(newRawRefreshToken);
@@ -131,15 +135,18 @@ export async function refreshSession(rawRefreshToken: string, ipAddress?: string
     where: { id: session.id },
     data: {
       refreshTokenHash: newHash,
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      expiresAt: new Date(Date.now() + policy.refreshTokenTtlDays * 24 * 60 * 60 * 1000),
     },
   });
 
-  const accessToken = generateAccessToken({
-    userId: session.userId,
-    email: session.user.email,
-    sessionId: session.id,
-  });
+  const accessToken = generateAccessToken(
+    {
+      userId: session.userId,
+      email: session.user.email,
+      sessionId: session.id,
+    },
+    policy.accessTokenTtlMinutes,
+  );
 
   return { accessToken, refreshToken: newRawRefreshToken };
 }

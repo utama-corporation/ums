@@ -11,6 +11,8 @@ dist
 .next
 out
 build
+.turbo
+*.tsbuildinfo
 
 # Environment files
 .env
