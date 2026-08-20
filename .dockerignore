@@ -1,0 +1,17 @@
+node_modules
+**/node_modules
+.git
+.next
+**/.next
+dist
+**/dist
+.turbo
+**/.turbo
+*.log
+.env
+.env.*
+!.env.*.example
+scratchpad
+.vscode
+.idea
+coverage

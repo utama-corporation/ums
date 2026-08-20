@@ -1,0 +1,714 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// --------------------------------------------------------
+// 1. IDENTITY & RBAC
+// --------------------------------------------------------
+
+model CompanyProfile {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  code        String   @unique
+  address     String?
+  logoUrl     String?
+  phone       String?
+  email       String?
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  updatedAt   DateTime @updatedAt @db.Timestamptz
+}
+
+model User {
+  id              String         @id @default(uuid()) @db.Uuid
+  username        String         @unique
+  email           String         @unique
+  fullName        String
+  employeeId      String?        @unique
+  departmentId    String?        @db.Uuid
+  position        String?
+  isActive        Boolean        @default(true)
+  createdAt       DateTime       @default(now()) @db.Timestamptz
+  updatedAt       DateTime       @updatedAt @db.Timestamptz
+  deletedAt       DateTime?      @db.Timestamptz
+
+  department      Department?    @relation(fields: [departmentId], references: [id])
+  credentials     UserCredential?
+  sessions        Session[]
+  loginAttempts   LoginAttempt[]
+  userRoles       UserRole[]
+  delegationsFrom UserDelegate[]  @relation("DelegatorRelation")
+  delegationsTo   UserDelegate[]  @relation("DelegateRelation")
+  auditEvents     AuditEvent[]
+  signatureProfile DigitalSignatureProfile?
+}
+
+model UserCredential {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @unique @db.Uuid
+  passwordHash String
+  pinHash      String?
+  updatedAt    DateTime @updatedAt @db.Timestamptz
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Session {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @db.Uuid
+  refreshTokenHash String
+  ipAddress    String?
+  userAgent    String?
+  expiresAt    DateTime @db.Timestamptz
+  revokedAt    DateTime? @db.Timestamptz
+  createdAt    DateTime @default(now()) @db.Timestamptz
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model LoginAttempt {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String?  @db.Uuid
+  username  String
+  success   Boolean
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
+
+model Department {
+  id          String       @id @default(uuid()) @db.Uuid
+  code        String       @unique
+  name        String
+  parentId    String?      @db.Uuid
+  headUserId  String?      @db.Uuid
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now()) @db.Timestamptz
+  updatedAt   DateTime     @updatedAt @db.Timestamptz
+
+  parent      Department?  @relation("DeptHierarchy", fields: [parentId], references: [id])
+  children    Department[] @relation("DeptHierarchy")
+  users       User[]
+}
+
+model Role {
+  id          String           @id @default(uuid()) @db.Uuid
+  name        String           @unique
+  description String?
+  isSystem    Boolean          @default(false)
+  createdAt   DateTime         @default(now()) @db.Timestamptz
+  updatedAt   DateTime         @updatedAt @db.Timestamptz
+
+  rolePermissions RolePermission[]
+  userRoles       UserRole[]
+}
+
+model Permission {
+  id          String           @id @default(uuid()) @db.Uuid
+  code        String           @unique
+  module      String
+  description String?
+  createdAt   DateTime         @default(now()) @db.Timestamptz
+
+  rolePermissions RolePermission[]
+}
+
+model UserRole {
+  userId    String   @db.Uuid
+  roleId    String   @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+}
+
+model RolePermission {
+  roleId       String     @db.Uuid
+  permissionId String     @db.Uuid
+  createdAt    DateTime   @default(now()) @db.Timestamptz
+
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+model UserDelegate {
+  id          String    @id @default(uuid()) @db.Uuid
+  delegatorId String    @db.Uuid
+  delegateId  String    @db.Uuid
+  scope       String    @default("ALL")
+  reason      String
+  startDate   DateTime  @db.Timestamptz
+  expiryDate  DateTime  @db.Timestamptz
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now()) @db.Timestamptz
+
+  delegator   User      @relation("DelegatorRelation", fields: [delegatorId], references: [id])
+  delegate    User      @relation("DelegateRelation", fields: [delegateId], references: [id])
+}
+
+// --------------------------------------------------------
+// 2. MASTER DATA & NUMBERING
+// --------------------------------------------------------
+
+model Category {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  updatedAt   DateTime @updatedAt @db.Timestamptz
+
+  memos       Memo[]
+}
+
+model MemoType {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now()) @db.Timestamptz
+
+  memos       Memo[]
+}
+
+model MemoNumberingRule {
+  id              String   @id @default(uuid()) @db.Uuid
+  name            String
+  formatPattern   String   // e.g. "{SEQUENCE}/{DEPT}/{TYPE}/{ROMAN_MONTH}/{YEAR}"
+  resetFrequency  String   @default("YEARLY") // YEARLY, MONTHLY
+  paddingDigits   Int      @default(4)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now()) @db.Timestamptz
+}
+
+model MemoNumberSequence {
+  id           String   @id @default(uuid()) @db.Uuid
+  scopeKey     String   // e.g. "HR/MEMO/2026"
+  lastSequence Int      @default(0)
+  updatedAt    DateTime @updatedAt @db.Timestamptz
+
+  @@unique([scopeKey])
+}
+
+// --------------------------------------------------------
+// 3. WORKFLOW DESIGNER
+// --------------------------------------------------------
+
+model WorkflowDefinition {
+  id          String                      @id @default(uuid()) @db.Uuid
+  name        String
+  description String?
+  categoryId  String?                     @db.Uuid
+  createdAt   DateTime                    @default(now()) @db.Timestamptz
+  updatedAt   DateTime                    @updatedAt @db.Timestamptz
+
+  versions    WorkflowDefinitionVersion[]
+}
+
+model WorkflowDefinitionVersion {
+  id                   String             @id @default(uuid()) @db.Uuid
+  workflowDefinitionId String             @db.Uuid
+  versionNumber        Int
+  status               String             @default("DRAFT") // DRAFT, ACTIVE, ARCHIVED
+  createdAt            DateTime           @default(now()) @db.Timestamptz
+
+  workflowDefinition   WorkflowDefinition @relation(fields: [workflowDefinitionId], references: [id], onDelete: Cascade)
+  steps                WorkflowStep[]
+  workflowInstances    WorkflowInstance[]
+
+  @@unique([workflowDefinitionId, versionNumber])
+}
+
+model WorkflowStep {
+  id                          String                    @id @default(uuid()) @db.Uuid
+  workflowDefinitionVersionId String                    @db.Uuid
+  stepOrder                   Int
+  name                        String
+  mode                        String                    @default("SEQUENTIAL") // SEQUENTIAL, PARALLEL
+  parallelPolicy              String                    @default("ALL")        // ALL, ANY, QUORUM
+  slaHours                    Int?
+  requireSignature            Boolean                   @default(false)
+  createdAt                   DateTime                  @default(now()) @db.Timestamptz
+
+  workflowVersion             WorkflowDefinitionVersion @relation(fields: [workflowDefinitionVersionId], references: [id], onDelete: Cascade)
+  approverRules               WorkflowApproverRule[]
+  conditions                  WorkflowCondition[]
+}
+
+model WorkflowApproverRule {
+  id             String       @id @default(uuid()) @db.Uuid
+  workflowStepId String       @db.Uuid
+  strategy       String       // USER, ROLE, DEPARTMENT_HEAD, MANAGER_OF_REQUESTER
+  targetId       String?      // UserId or RoleId if applicable
+
+  workflowStep   WorkflowStep @relation(fields: [workflowStepId], references: [id], onDelete: Cascade)
+}
+
+model WorkflowCondition {
+  id             String       @id @default(uuid()) @db.Uuid
+  workflowStepId String       @db.Uuid
+  field          String       // priority, classification, amount
+  operator       String       // EQUALS, GREATER_THAN, IN
+  value          String       // JSON string of value
+
+  workflowStep   WorkflowStep @relation(fields: [workflowStepId], references: [id], onDelete: Cascade)
+}
+
+// --------------------------------------------------------
+// 4. MEMO AGGREGATE & DRAFT
+// --------------------------------------------------------
+
+model Memo {
+  id                  String               @id @default(uuid()) @db.Uuid
+  memoNumber          String?              @unique
+  memoDate            DateTime             @default(now()) @db.Timestamptz
+  memoTypeId          String               @db.Uuid
+  categoryId          String               @db.Uuid
+  title               String
+  priority            String               @default("NORMAL")       // NORMAL, IMPORTANT, URGENT, CRITICAL
+  classification      String               @default("GENERAL")      // GENERAL, INTERNAL, CONFIDENTIAL, HIGHLY_CONFIDENTIAL
+  status              String               @default("DRAFT")        // DRAFT, SUBMITTED, WAITING_APPROVAL, REVISION, REJECTED, CANCELLED, APPROVED, OUTBOX, PUBLISHED, ARCHIVED
+  currentVersion      Int                  @default(1)
+  lockVersion         Int                  @default(1)
+  authorId            String               @db.Uuid
+  deadline            DateTime?            @db.Timestamptz
+  revisesMemoId       String?              @db.Uuid
+  createdAt           DateTime             @default(now()) @db.Timestamptz
+  updatedAt           DateTime             @updatedAt @db.Timestamptz
+  deletedAt           DateTime?            @db.Timestamptz
+
+  category            Category             @relation(fields: [categoryId], references: [id])
+  memoType            MemoType             @relation(fields: [memoTypeId], references: [id])
+  revisesMemo         Memo?                @relation("MemoRevision", fields: [revisesMemoId], references: [id])
+  revisions           Memo[]               @relation("MemoRevision")
+  contentVersions     MemoContentVersion[]
+  senders             MemoSender[]
+  recipients          MemoRecipient[]
+  ccs                 MemoCc[]
+  attachments         MemoAttachment[]
+  statusHistory       MemoStatusHistory[]
+  workflowInstances   WorkflowInstance[]
+  distributions       MemoDistribution[]
+  dispositions        MemoDisposition[]
+  publication         DocumentPublication?
+
+  @@index([status])
+  @@index([categoryId])
+  @@index([authorId])
+  @@index([memoDate])
+}
+
+model MemoContentVersion {
+  id        String   @id @default(uuid()) @db.Uuid
+  memoId    String   @db.Uuid
+  version   Int
+  bodyHtml  String   @db.Text
+  bodyText  String?  @db.Text
+  createdById String @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  memo      Memo     @relation(fields: [memoId], references: [id], onDelete: Cascade)
+
+  @@unique([memoId, version])
+}
+
+model MemoSender {
+  id           String   @id @default(uuid()) @db.Uuid
+  memoId       String   @db.Uuid
+  partyType    String   // USER, DEPARTMENT, EXTERNAL
+  partyId      String?  @db.Uuid
+  displayName  String
+
+  memo         Memo     @relation(fields: [memoId], references: [id], onDelete: Cascade)
+}
+
+model MemoRecipient {
+  id           String   @id @default(uuid()) @db.Uuid
+  memoId       String   @db.Uuid
+  partyType    String   // USER, DEPARTMENT, EXTERNAL
+  partyId      String?  @db.Uuid
+  displayName  String
+  email        String?
+
+  memo         Memo     @relation(fields: [memoId], references: [id], onDelete: Cascade)
+
+  @@index([partyId])
+}
+
+model MemoCc {
+  id           String   @id @default(uuid()) @db.Uuid
+  memoId       String   @db.Uuid
+  partyType    String   // USER, DEPARTMENT, EXTERNAL
+  partyId      String?  @db.Uuid
+  displayName  String
+
+  memo         Memo     @relation(fields: [memoId], references: [id], onDelete: Cascade)
+}
+
+model MemoStatusHistory {
+  id        String   @id @default(uuid()) @db.Uuid
+  memoId    String   @db.Uuid
+  fromStatus String?
+  toStatus  String
+  actorId   String   @db.Uuid
+  reason    String?
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  memo      Memo     @relation(fields: [memoId], references: [id], onDelete: Cascade)
+}
+
+// --------------------------------------------------------
+// 5. ATTACHMENT OBJECT STORAGE
+// --------------------------------------------------------
+
+model AttachmentObject {
+  id          String           @id @default(uuid()) @db.Uuid
+  objectKey   String           @unique
+  fileName    String
+  fileSize    Int
+  mimeType    String
+  checksumSha256 String
+  status      String           @default("PENDING") // PENDING, READY, QUARANTINED, DELETED
+  createdAt   DateTime         @default(now()) @db.Timestamptz
+
+  memoAttachments MemoAttachment[]
+  taskEvidences   TaskEvidenceAttachment[]
+}
+
+model MemoAttachment {
+  id                 String           @id @default(uuid()) @db.Uuid
+  memoId             String           @db.Uuid
+  attachmentObjectId String           @db.Uuid
+  createdAt          DateTime         @default(now()) @db.Timestamptz
+
+  memo               Memo             @relation(fields: [memoId], references: [id], onDelete: Cascade)
+  attachmentObject   AttachmentObject @relation(fields: [attachmentObjectId], references: [id], onDelete: Cascade)
+}
+
+// --------------------------------------------------------
+// 6. WORKFLOW RUNTIME & APPROVAL
+// --------------------------------------------------------
+
+model WorkflowInstance {
+  id                          String                    @id @default(uuid()) @db.Uuid
+  memoId                      String                    @db.Uuid
+  workflowDefinitionVersionId String                    @db.Uuid
+  status                      String                    @default("RUNNING") // RUNNING, COMPLETED, REJECTED, CANCELLED
+  currentStepOrder            Int                       @default(1)
+  createdAt                   DateTime                  @default(now()) @db.Timestamptz
+  updatedAt                   DateTime                  @updatedAt @db.Timestamptz
+
+  memo                        Memo                      @relation(fields: [memoId], references: [id], onDelete: Cascade)
+  workflowVersion             WorkflowDefinitionVersion @relation(fields: [workflowDefinitionVersionId], references: [id])
+  steps                       WorkflowInstanceStep[]
+}
+
+model WorkflowInstanceStep {
+  id                 String               @id @default(uuid()) @db.Uuid
+  workflowInstanceId String               @db.Uuid
+  stepOrder          Int
+  name               String
+  status             String               @default("PENDING") // PENDING, ACTIVE, APPROVED, REJECTED, SKIPPED
+  mode               String               @default("SEQUENTIAL")
+  parallelPolicy     String               @default("ALL")
+  requireSignature   Boolean              @default(false)
+  slaHours           Int?
+  activatedAt        DateTime?            @db.Timestamptz
+  completedAt        DateTime?            @db.Timestamptz
+
+  workflowInstance   WorkflowInstance     @relation(fields: [workflowInstanceId], references: [id], onDelete: Cascade)
+  assignments        ApprovalAssignment[]
+}
+
+model ApprovalAssignment {
+  id                     String               @id @default(uuid()) @db.Uuid
+  workflowInstanceStepId String               @db.Uuid
+  approverId             String               @db.Uuid
+  originalApproverId     String?              @db.Uuid
+  status                 String               @default("PENDING") // PENDING, APPROVED, REJECTED, REVISION_REQUESTED, DELEGATED
+  assignedAt             DateTime             @default(now()) @db.Timestamptz
+  respondedAt            DateTime?            @db.Timestamptz
+
+  workflowStep           WorkflowInstanceStep @relation(fields: [workflowInstanceStepId], references: [id], onDelete: Cascade)
+  decisions              ApprovalDecision[]
+
+  @@index([approverId, status])
+}
+
+model ApprovalDecision {
+  id                   String             @id @default(uuid()) @db.Uuid
+  approvalAssignmentId String             @db.Uuid
+  action               String             // APPROVE, REJECT, REQUEST_REVISION, DELEGATE
+  reason               String?
+  memoVersion          Int
+  ipAddress            String?
+  userAgent            String?
+  createdAt            DateTime           @default(now()) @db.Timestamptz
+
+  assignment           ApprovalAssignment @relation(fields: [approvalAssignmentId], references: [id], onDelete: Cascade)
+  signatureUsage       SignatureUsage?
+}
+
+// --------------------------------------------------------
+// 7. DISTRIBUTION, INBOX, READ RECEIPT
+// --------------------------------------------------------
+
+model MemoDistribution {
+  id             String                  @id @default(uuid()) @db.Uuid
+  memoId         String                  @db.Uuid
+  distributedById String                 @db.Uuid
+  distributedAt  DateTime                @default(now()) @db.Timestamptz
+
+  memo           Memo                    @relation(fields: [memoId], references: [id], onDelete: Cascade)
+  recipients     DistributionRecipient[]
+}
+
+model DistributionRecipient {
+  id                 String             @id @default(uuid()) @db.Uuid
+  memoDistributionId String             @db.Uuid
+  recipientUserId    String?            @db.Uuid
+  recipientDeptId    String?            @db.Uuid
+  isExternal         Boolean            @default(false)
+  createdAt          DateTime           @default(now()) @db.Timestamptz
+
+  distribution       MemoDistribution   @relation(fields: [memoDistributionId], references: [id], onDelete: Cascade)
+  readReceipts       ReadReceipt[]
+  externalAccesses   ExternalRecipientAccess[]
+
+  @@index([recipientUserId])
+}
+
+model ReadReceipt {
+  id                      String                @id @default(uuid()) @db.Uuid
+  distributionRecipientId String                @db.Uuid
+  userId                  String                @db.Uuid
+  firstReadAt             DateTime              @default(now()) @db.Timestamptz
+  lastViewedAt            DateTime              @updatedAt @db.Timestamptz
+
+  distributionRecipient   DistributionRecipient @relation(fields: [distributionRecipientId], references: [id], onDelete: Cascade)
+
+  @@unique([distributionRecipientId, userId])
+}
+
+model ExternalRecipientAccess {
+  id                      String                @id @default(uuid()) @db.Uuid
+  distributionRecipientId String                @db.Uuid
+  tokenHash               String                @unique
+  expiresAt               DateTime              @db.Timestamptz
+  revokedAt               DateTime?             @db.Timestamptz
+  accessCount             Int                   @default(0)
+  createdAt               DateTime              @default(now()) @db.Timestamptz
+
+  distributionRecipient   DistributionRecipient @relation(fields: [distributionRecipientId], references: [id], onDelete: Cascade)
+}
+
+// --------------------------------------------------------
+// 8. PUBLICATION & DIGITAL SIGNATURE
+// --------------------------------------------------------
+
+model DigitalSignatureProfile {
+  id            String          @id @default(uuid()) @db.Uuid
+  userId        String          @unique @db.Uuid
+  signatureType String          @default("INTERNAL") // INTERNAL, CERTIFIED
+  imageAssetKey String?
+  isActive      Boolean         @default(true)
+  createdAt     DateTime        @default(now()) @db.Timestamptz
+
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  usages        SignatureUsage[]
+}
+
+model SignatureUsage {
+  id                        String                  @id @default(uuid()) @db.Uuid
+  digitalSignatureProfileId String                  @db.Uuid
+  approvalDecisionId        String?                 @unique @db.Uuid
+  documentPublicationId     String?                 @db.Uuid
+  documentHash              String
+  ipAddress                 String?
+  signedAt                  DateTime                @default(now()) @db.Timestamptz
+
+  profile                   DigitalSignatureProfile @relation(fields: [digitalSignatureProfileId], references: [id])
+  approvalDecision          ApprovalDecision?       @relation(fields: [approvalDecisionId], references: [id])
+  documentPublication       DocumentPublication?    @relation(fields: [documentPublicationId], references: [id])
+}
+
+model DocumentPublication {
+  id                String       @id @default(uuid()) @db.Uuid
+  memoId            String       @unique @db.Uuid
+  canonicalPdfKey   String
+  pdfHashSha256     String
+  publishedById     String       @db.Uuid
+  publishedAt       DateTime     @default(now()) @db.Timestamptz
+
+  memo              Memo         @relation(fields: [memoId], references: [id], onDelete: Cascade)
+  signatureUsages   SignatureUsage[]
+  verificationTokens DocumentVerificationToken[]
+}
+
+model DocumentVerificationToken {
+  id                    String              @id @default(uuid()) @db.Uuid
+  documentPublicationId String              @db.Uuid
+  token                 String              @unique
+  expiresAt             DateTime?           @db.Timestamptz
+  createdAt             DateTime            @default(now()) @db.Timestamptz
+
+  publication           DocumentPublication @relation(fields: [documentPublicationId], references: [id], onDelete: Cascade)
+}
+
+// --------------------------------------------------------
+// 9. TASK DISPOSITION
+// --------------------------------------------------------
+
+model MemoDisposition {
+  id            String   @id @default(uuid()) @db.Uuid
+  memoId        String   @db.Uuid
+  issuerId      String   @db.Uuid
+  instruction   String
+  createdAt     DateTime @default(now()) @db.Timestamptz
+
+  memo          Memo     @relation(fields: [memoId], references: [id], onDelete: Cascade)
+  tasks         Task[]
+}
+
+model Task {
+  id                String                   @id @default(uuid()) @db.Uuid
+  memoDispositionId String                   @db.Uuid
+  title             String
+  instruction       String
+  priority          String                   @default("NORMAL")
+  status            String                   @default("NOT_STARTED") // NOT_STARTED, IN_PROGRESS, WAITING_VERIFICATION, COMPLETED, OVERDUE, CANCELLED
+  progress          Int                      @default(0)
+  startDate         DateTime?                @db.Timestamptz
+  deadline          DateTime?                @db.Timestamptz
+  completedAt       DateTime?                @db.Timestamptz
+  createdAt         DateTime                 @default(now()) @db.Timestamptz
+  updatedAt         DateTime                 @updatedAt @db.Timestamptz
+
+  disposition       MemoDisposition          @relation(fields: [memoDispositionId], references: [id], onDelete: Cascade)
+  assignees         TaskAssignee[]
+  statusHistory     TaskStatusHistory[]
+  evidenceAttachments TaskEvidenceAttachment[]
+
+  @@index([status])
+}
+
+model TaskAssignee {
+  taskId     String   @db.Uuid
+  userId     String   @db.Uuid
+  assignedAt DateTime @default(now()) @db.Timestamptz
+
+  task       Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, userId])
+  @@index([userId])
+}
+
+model TaskStatusHistory {
+  id         String   @id @default(uuid()) @db.Uuid
+  taskId     String   @db.Uuid
+  fromStatus String?
+  toStatus   String
+  actorId    String   @db.Uuid
+  comment    String?
+  createdAt  DateTime @default(now()) @db.Timestamptz
+
+  task       Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+}
+
+model TaskEvidenceAttachment {
+  id                 String           @id @default(uuid()) @db.Uuid
+  taskId             String           @db.Uuid
+  attachmentObjectId String           @db.Uuid
+  uploadedById       String           @db.Uuid
+  createdAt          DateTime         @default(now()) @db.Timestamptz
+
+  task               Task             @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  attachmentObject   AttachmentObject @relation(fields: [attachmentObjectId], references: [id], onDelete: Cascade)
+}
+
+// --------------------------------------------------------
+// 10. NOTIFICATIONS, OUTBOX, AUDIT & SYSTEM SETTINGS
+// --------------------------------------------------------
+
+model Notification {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  title     String
+  message   String
+  type      String   // MEMO_SUBMITTED, APPROVAL_REQUIRED, MEMO_PUBLISHED, etc.
+  link      String?
+  isRead    Boolean  @default(false)
+  readAt    DateTime? @db.Timestamptz
+  createdAt DateTime @default(now()) @db.Timestamptz
+}
+
+model DomainOutboxEvent {
+  id           String    @id @default(uuid()) @db.Uuid
+  eventType    String
+  aggregateType String
+  aggregateId  String
+  payloadJson  String    @db.Text
+  status       String    @default("PENDING") // PENDING, ENQUEUED, PROCESSED, FAILED
+  errorLog     String?   @db.Text
+  createdAt    DateTime  @default(now()) @db.Timestamptz
+  processedAt  DateTime? @db.Timestamptz
+
+  @@index([status, createdAt])
+}
+
+model ExportJob {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @db.Uuid
+  exportType   String    // CSV, XLSX, PDF
+  reportType   String    @default("status")
+  filtersJson  String?   @db.Text
+  status       String    @default("PENDING") // PENDING, PROCESSING, COMPLETED, FAILED
+  fileObjectKey String?
+  rowCount     Int?
+  errorLog     String?   @db.Text
+  expiresAt    DateTime? @db.Timestamptz
+  createdAt    DateTime  @default(now()) @db.Timestamptz
+  completedAt  DateTime? @db.Timestamptz
+
+  @@index([userId])
+}
+
+model AuditEvent {
+  id            String   @id @default(uuid()) @db.Uuid
+  actorId       String?  @db.Uuid
+  action        String
+  module        String
+  resourceType  String
+  resourceId    String?
+  memoNumber    String?
+  beforeJson    String?  @db.Text
+  afterJson     String?  @db.Text
+  ipAddress     String?
+  userAgent     String?
+  requestId     String?
+  timestamp     DateTime @default(now()) @db.Timestamptz
+
+  actor         User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([actorId])
+  @@index([timestamp])
+}
+
+model SystemSetting {
+  key         String   @id
+  value       String   @db.Text
+  description String?
+  updatedAt   DateTime @updatedAt @db.Timestamptz
+}
