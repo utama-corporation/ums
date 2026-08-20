@@ -64,6 +64,10 @@ export const envSchema = z.object({
   SMTP_FROM: z.string().default("Utama Memo System <noreply@utama.co.id>"),
 
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
+
+  // External HR employee directory (source of truth for who is allowed a UMS account).
+  EMPLOYEE_API_BASE_URL: z.string().url().default("https://emp.padmoasm.com/api/v1/q"),
+  EMPLOYEE_API_TOKEN: z.string().optional().default(""),
 });
 
 export type Env = z.infer<typeof envSchema>;

@@ -22,6 +22,8 @@ export async function createUser(input: UserCreateInput, actorId?: string) {
       email: input.email,
       fullName: input.fullName,
       employeeId: input.employeeId || null,
+      mobilePhone: input.mobilePhone || null,
+      companyId: input.companyId || null,
       departmentId: input.departmentId || null,
       position: input.position || null,
       credentials: {
@@ -35,6 +37,7 @@ export async function createUser(input: UserCreateInput, actorId?: string) {
     },
     include: {
       department: true,
+      company: true,
       userRoles: { include: { role: true } },
     },
   });
@@ -81,12 +84,15 @@ export async function updateUser(id: string, input: UserUpdateInput, actorId?: s
       email: input.email,
       fullName: input.fullName,
       employeeId: input.employeeId,
+      mobilePhone: input.mobilePhone,
+      companyId: input.companyId,
       departmentId: input.departmentId,
       position: input.position,
       isActive: input.isActive,
     },
     include: {
       department: true,
+      company: true,
       userRoles: { include: { role: true } },
     },
   });
@@ -150,6 +156,7 @@ export async function listUsers(page = 1, limit = 10, search?: string) {
       take: limit,
       include: {
         department: true,
+        company: true,
         userRoles: { include: { role: true } },
       },
       orderBy: { createdAt: "desc" },

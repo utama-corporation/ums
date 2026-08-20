@@ -24,7 +24,7 @@ async function main() {
     "task.create", "task.update", "task.complete",
     "report.view", "report.export",
     "master.user.manage", "master.department.manage", "master.category.manage",
-    "master.workflow.manage", "master.signature.manage",
+    "master.workflow.manage", "master.signature.manage", "master.company.manage",
     "settings.manage", "audit.view"
   ];
 
@@ -51,7 +51,7 @@ async function main() {
       "memo.create", "memo.view", "memo.update", "memo.delete", "memo.submit",
       "memo.publish", "memo.archive", "memo.print", "memo.export",
       "report.view", "report.export",
-      "master.category.manage", "master.workflow.manage", "master.signature.manage",
+      "master.category.manage", "master.workflow.manage", "master.signature.manage", "master.company.manage",
       "audit.view",
     ],
     MANAGEMENT: [

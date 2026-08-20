@@ -205,6 +205,8 @@ export async function getUserProfile(userId: string): Promise<UserProfile> {
     email: user.email,
     fullName: user.fullName,
     employeeId: user.employeeId,
+    mobilePhone: user.mobilePhone,
+    companyId: user.companyId,
     departmentId: user.departmentId,
     departmentName: user.department?.name || null,
     position: user.position,

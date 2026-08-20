@@ -61,6 +61,7 @@ const NAV_GROUPS: NavGroup[] = [
     title: "MASTER DATA",
     items: [
       { label: "Master User", href: "/master/users", icon: "♟", permission: "master.user.manage" },
+      { label: "Master Perusahaan", href: "/master/companies", icon: "▣", permission: "master.company.manage" },
       { label: "Master Departemen", href: "/master/departments", icon: "▦", permission: "master.department.manage" },
       { label: "Master Category", href: "/master/categories", icon: "▱", permission: "master.category.manage" },
       { label: "Jenis Memo", href: "/master/types", icon: "☷", permission: "master.category.manage" },

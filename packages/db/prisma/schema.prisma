@@ -29,6 +29,8 @@ model User {
   email           String         @unique
   fullName        String
   employeeId      String?        @unique
+  mobilePhone     String?
+  companyId       String?        @db.Uuid
   departmentId    String?        @db.Uuid
   position        String?
   isActive        Boolean        @default(true)
@@ -36,6 +38,7 @@ model User {
   updatedAt       DateTime       @updatedAt @db.Timestamptz
   deletedAt       DateTime?      @db.Timestamptz
 
+  company         Company?       @relation(fields: [companyId], references: [id])
   department      Department?    @relation(fields: [departmentId], references: [id])
   credentials     UserCredential?
   sessions        Session[]
@@ -45,6 +48,19 @@ model User {
   delegationsTo   UserDelegate[]  @relation("DelegateRelation")
   auditEvents     AuditEvent[]
   signatureProfile DigitalSignatureProfile?
+}
+
+// Employer entity within the corporate group (e.g. UC/RU/GSU), sourced from the
+// external HR employee API and used to reconcile which users should stay active.
+model Company {
+  id        String   @id @default(uuid()) @db.Uuid
+  code      String   @unique
+  name      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  users     User[]
 }
 
 model UserCredential {

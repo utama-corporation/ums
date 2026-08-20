@@ -17,6 +17,21 @@ export const SecurityPolicySchema = z.object({
 
 export type SecurityPolicyInput = z.infer<typeof SecurityPolicySchema>;
 
+export const CompanySchema = z.object({
+  code: z.string().min(1).toUpperCase(),
+  name: z.string().min(2),
+});
+
+export type CompanyInput = z.infer<typeof CompanySchema>;
+
+export const CompanyUpdateSchema = z.object({
+  code: z.string().min(1).toUpperCase().optional(),
+  name: z.string().min(2).optional(),
+  isActive: z.boolean().optional(),
+});
+
+export type CompanyUpdateInput = z.infer<typeof CompanyUpdateSchema>;
+
 export const CategorySchema = z.object({
   code: z.string().min(2).toUpperCase(),
   name: z.string().min(2),

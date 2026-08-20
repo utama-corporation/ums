@@ -11,6 +11,8 @@ import { usersRouter } from "./routes/users.js";
 import { departmentsRouter } from "./routes/departments.js";
 import { rbacRouter } from "./routes/rbac.js";
 import { categoriesRouter } from "./routes/categories.js";
+import { companiesRouter } from "./routes/companies.js";
+import { employeesRouter } from "./routes/employees.js";
 import { memoTypesRouter } from "./routes/memoTypes.js";
 import { numberingRouter } from "./routes/numbering.js";
 import { workflowsRouter } from "./routes/workflows.js";
@@ -52,6 +54,8 @@ export function createApp(): Express {
   app.use("/api/v1/departments", departmentsRouter);
   app.use("/api/v1", rbacRouter);
   app.use("/api/v1/categories", categoriesRouter);
+  app.use("/api/v1/companies", companiesRouter);
+  app.use("/api/v1", employeesRouter);
   app.use("/api/v1/memo-types", memoTypesRouter);
   app.use("/api/v1/numbering-rules", numberingRouter);
   app.use("/api/v1/workflows", workflowsRouter);
