@@ -31,6 +31,15 @@ export class UnauthorizedError extends AppError {
   }
 }
 
+// Distinct from UnauthorizedError so the frontend can tell "wrong password" apart from
+// "this account was created without one yet" and route to the set-initial-password screen
+// instead of just showing a generic login failure.
+export class PasswordNotSetError extends AppError {
+  constructor(message: string = "Password has not been set for this account yet", details?: unknown) {
+    super(message, 401, "PASSWORD_NOT_SET", details);
+  }
+}
+
 export class ForbiddenError extends AppError {
   constructor(message: string = "Forbidden", details?: unknown) {
     super(message, 403, "FORBIDDEN", details);

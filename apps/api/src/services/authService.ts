@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import { env } from "@ums/config";
-import { UnauthorizedError, ForbiddenError } from "../errors/AppError.js";
+import { UnauthorizedError, ForbiddenError, PasswordNotSetError } from "../errors/AppError.js";
 import { logAuditEvent } from "./auditService.js";
 import { getSecurityPolicy } from "./settingsService.js";
 import { UserProfile } from "@ums/contracts";
@@ -46,12 +46,18 @@ export async function loginUser(username: string, passwordPlain: string, ipAddre
     },
   });
 
-  if (!user || !user.credentials || !user.isActive) {
+  if (!user || !user.isActive) {
     await prisma.loginAttempt.create({
       data: { userId: user?.id || null, username, success: false, ipAddress, userAgent },
     });
     await logAuditEvent({ action: "LOGIN_FAILED", module: "auth", resourceType: "User", ipAddress, userAgent });
     throw new UnauthorizedError("Invalid username or password");
+  }
+
+  if (!user.credentials) {
+    // Not a failed login attempt in the usual sense — the account is real and active, it
+    // just hasn't had a password set yet (see userService.createUser / setInitialPassword).
+    throw new PasswordNotSetError();
   }
 
   const passwordValid = await bcrypt.compare(passwordPlain, user.credentials.passwordHash);

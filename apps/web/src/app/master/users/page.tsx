@@ -190,8 +190,18 @@ export default function MasterUsersPage() {
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    setSaving(true);
     setFormError("");
+
+    if (!form.id && !form.password && !form.employeeId) {
+      setFormError("Isi Password Awal, atau isi NIK supaya user bisa membuat password sendiri.");
+      return;
+    }
+    if (!form.id && form.password && form.password.length < 8) {
+      setFormError("Password minimal 8 karakter.");
+      return;
+    }
+
+    setSaving(true);
 
     if (form.id) {
       const payload = {
@@ -223,7 +233,7 @@ export default function MasterUsersPage() {
         companyId: form.companyId || undefined,
         departmentId: form.departmentId || null,
         position: form.position || null,
-        password: form.password,
+        password: form.password || undefined,
         roleIds: form.roleIds,
       };
       const res = await apiClient("/users", { method: "POST", body: JSON.stringify(payload) });
@@ -475,15 +485,21 @@ export default function MasterUsersPage() {
             </div>
             {!form.id && (
               <div>
-                <label className="block text-xs font-bold mb-1.5">Password Awal *</label>
+                <label htmlFor="user-password" className="block text-xs font-bold mb-1.5">Password Awal</label>
                 <input
+                  id="user-password"
                   type="password"
-                  required
                   minLength={8}
                   value={form.password}
                   onChange={(e) => setForm({ ...form, password: e.target.value })}
                   className="w-full border border-ums-border rounded-md px-3 py-2.5 text-sm"
+                  placeholder="Kosongkan agar user bikin sendiri saat login pertama"
                 />
+                <p className="text-xs text-slate-400 mt-1">
+                  {form.employeeId
+                    ? "Kosongkan untuk membiarkan user membuat password sendiri di login pertama (verifikasi pakai NIK)."
+                    : "Wajib diisi karena user ini belum punya NIK — tanpa NIK, user tidak bisa membuat password sendiri."}
+                </p>
               </div>
             )}
             <div className="grid grid-cols-2 gap-3">

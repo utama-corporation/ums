@@ -1,7 +1,8 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { loginUser, refreshSession, logoutSession, logoutAllUserSessions, getUserProfile } from "../services/authService.js";
-import { LoginRequestSchema } from "@ums/contracts";
-import { authenticate, authRateLimiter, refreshRateLimiter } from "../middleware/authMiddleware.js";
+import { setInitialPassword } from "../services/userService.js";
+import { LoginRequestSchema, SetInitialPasswordSchema } from "@ums/contracts";
+import { authenticate, authRateLimiter, refreshRateLimiter, passwordResetRateLimiter } from "../middleware/authMiddleware.js";
 import { env } from "@ums/config";
 
 export const authRouter: Router = Router();
@@ -30,6 +31,19 @@ authRouter.post("/login", authRateLimiter, async (req: Request, res: Response, n
     res.status(200).json({
       success: true,
       message: "Login successful",
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+authRouter.post("/set-initial-password", passwordResetRateLimiter, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const input = SetInitialPasswordSchema.parse(req.body);
+    await setInitialPassword(input);
+    res.status(200).json({
+      success: true,
+      message: "Password set successfully. You can now log in.",
     });
   } catch (error) {
     next(error);

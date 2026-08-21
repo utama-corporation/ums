@@ -1,7 +1,7 @@
 import { prisma } from "@ums/db";
 import bcrypt from "bcryptjs";
-import { NotFoundError, ConflictError } from "../errors/AppError.js";
-import { UserCreateInput, UserUpdateInput } from "@ums/contracts";
+import { NotFoundError, ConflictError, BadRequestError, ForbiddenError } from "../errors/AppError.js";
+import { UserCreateInput, UserUpdateInput, SetInitialPasswordInput } from "@ums/contracts";
 import { logAuditEvent } from "./auditService.js";
 
 export async function createUser(input: UserCreateInput, actorId?: string) {
@@ -14,7 +14,12 @@ export async function createUser(input: UserCreateInput, actorId?: string) {
     );
   }
 
-  const passwordHash = await bcrypt.hash(input.password, 10);
+  // No initial password -> the user sets their own on first login, verified against their
+  // NIK instead (see setInitialPassword below). Without a NIK on file that path has no way
+  // to verify identity, so the account would be permanently unable to log in — require one.
+  if (!input.password && !input.employeeId) {
+    throw new BadRequestError("Either an initial password or a NIK (for the user to set their own) is required");
+  }
 
   const user = await prisma.user.create({
     data: {
@@ -26,11 +31,9 @@ export async function createUser(input: UserCreateInput, actorId?: string) {
       companyId: input.companyId || null,
       departmentId: input.departmentId || null,
       position: input.position || null,
-      credentials: {
-        create: {
-          passwordHash,
-        },
-      },
+      ...(input.password
+        ? { credentials: { create: { passwordHash: await bcrypt.hash(input.password, 10) } } }
+        : {}),
       userRoles: {
         create: input.roleIds.map((roleId) => ({ roleId })),
       },
@@ -116,9 +119,12 @@ export async function resetUserPassword(id: string, newPasswordPlain: string, ac
 
   const passwordHash = await bcrypt.hash(newPasswordPlain, 10);
 
-  await prisma.userCredential.update({
+  // upsert, not update: a user created without an initial password (see createUser) has no
+  // UserCredential row yet, and an admin should still be able to set one for them directly.
+  await prisma.userCredential.upsert({
     where: { userId: id },
-    data: { passwordHash },
+    update: { passwordHash },
+    create: { userId: id, passwordHash },
   });
 
   // Revoke active sessions upon password reset
@@ -133,6 +139,40 @@ export async function resetUserPassword(id: string, newPasswordPlain: string, ac
     module: "master.user",
     resourceType: "User",
     resourceId: id,
+  });
+}
+
+// The self-service counterpart to resetUserPassword: no admin session, no old password to
+// check (there isn't one yet) — the caller proves identity with their NIK instead. Only
+// succeeds once, while the account still genuinely has no credentials; an existing password
+// must go through the normal login+change flow or an admin reset, not this endpoint.
+export async function setInitialPassword(input: SetInitialPasswordInput) {
+  const user = await prisma.user.findUnique({
+    where: { username: input.username },
+    include: { credentials: true },
+  });
+
+  if (!user || !user.isActive) {
+    throw new NotFoundError("Account not found or inactive");
+  }
+  if (user.credentials) {
+    throw new ForbiddenError("This account already has a password set. Use the login form or contact an admin to reset it.");
+  }
+  if (!user.employeeId || user.employeeId !== input.employeeId) {
+    throw new ForbiddenError("NIK does not match this account");
+  }
+
+  const passwordHash = await bcrypt.hash(input.newPassword, 10);
+  await prisma.userCredential.create({
+    data: { userId: user.id, passwordHash },
+  });
+
+  await logAuditEvent({
+    actorId: user.id,
+    action: "USER_INITIAL_PASSWORD_SET",
+    module: "auth",
+    resourceType: "User",
+    resourceId: user.id,
   });
 }
 

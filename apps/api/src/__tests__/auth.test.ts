@@ -39,6 +39,24 @@ describe("Auth & RBAC Endpoints Integration Test", () => {
     expect(res.body.error.code).toBe("UNAUTHORIZED");
   });
 
+  it("POST /api/v1/auth/login for an active account with no credentials yet should return PASSWORD_NOT_SET", async () => {
+    (prisma.user.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: "user-1",
+      username: "newstaff",
+      isActive: true,
+      credentials: null,
+      userRoles: [],
+    });
+
+    const res = await request(app)
+      .post("/api/v1/auth/login")
+      .send({ username: "newstaff", password: "anything12345" });
+
+    expect(res.status).toBe(401);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error.code).toBe("PASSWORD_NOT_SET");
+  });
+
   it("GET /api/v1/me without token should return 401", async () => {
     const res = await request(app).get("/api/v1/me");
     expect(res.status).toBe(401);

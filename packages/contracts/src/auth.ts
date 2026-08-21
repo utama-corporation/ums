@@ -8,10 +8,24 @@ const usernameSchema = z
 
 export const LoginRequestSchema = z.object({
   username: z.string().min(1, "Username is required"),
-  password: z.string().min(1, "Password is required"),
+  // No .min(1) here on purpose — an account created without a password (see
+  // UserCreateSchema below) must be able to submit a blank password and get routed to
+  // PASSWORD_NOT_SET, rather than being blocked by schema validation first.
+  password: z.string(),
 });
 
 export type LoginRequest = z.infer<typeof LoginRequestSchema>;
+
+// For accounts created with no initial password (see UserCreateSchema below) — the NIK
+// (employeeId) stands in for "prove you're actually this person" since there's no old
+// password to check against yet. Only works once, while the account still has no credentials.
+export const SetInitialPasswordSchema = z.object({
+  username: z.string().min(1, "Username is required"),
+  employeeId: z.string().min(1, "NIK is required"),
+  newPassword: z.string().min(8, "Password must be at least 8 characters"),
+});
+
+export type SetInitialPasswordInput = z.infer<typeof SetInitialPasswordSchema>;
 
 export const UserProfileSchema = z.object({
   id: z.string().uuid(),
@@ -40,7 +54,9 @@ export const UserCreateSchema = z.object({
   companyId: z.string().uuid().optional().nullable(),
   departmentId: z.string().uuid().optional().nullable(),
   position: z.string().optional().nullable(),
-  password: z.string().min(8, "Password must be at least 8 characters"),
+  // Optional: leave unset to let the user set their own password on first login (verified
+  // via NIK instead of an admin-typed initial password — see SetInitialPasswordSchema).
+  password: z.string().min(8, "Password must be at least 8 characters").optional(),
   roleIds: z.array(z.string().uuid()).default([]),
 });
 
