@@ -69,6 +69,13 @@ function normalizeName(v: SqlValue): string {
   return s(v).toLowerCase().replace(/\s+/g, " ").trim();
 }
 
+// The legacy dump uses a literal "-" for "no value" in several free-text columns — not
+// worth reporting as an "unmatched department", since there was never a real name to match.
+function isPlaceholder(v: SqlValue): boolean {
+  const val = s(v);
+  return val === "" || val === "-";
+}
+
 function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 5000);
 }
@@ -135,6 +142,16 @@ async function buildDepartmentIndex(): Promise<{
   return { deptIndex, divIndex, companiesFound: [...deptIndex.keys()], companyIdByCode };
 }
 
+// The legacy `user`/`memo` tables often embed the company code inside the department/division
+// text itself (e.g. "Tax UC", "Sales GSU"), while the org-structure API scopes department
+// names per company via the endpoint rather than the name — so "Tax UC" needs to become
+// "Tax" before it can match. Only the OWN company's code is stripped (stripping any company
+// code indiscriminately could accidentally collapse two genuinely different names).
+function stripOwnCompanySuffix(name: string, companyCode: string): string {
+  const re = new RegExp(`\\s+${companyCode}$`, "i");
+  return name.replace(re, "").trim();
+}
+
 function resolveDepartment(
   deptIndex: Map<string, Map<string, string>>,
   divIndex: Map<string, Map<string, string>>,
@@ -142,10 +159,16 @@ function resolveDepartment(
   departemenName: string,
   divisiName: string
 ): string | null {
-  const divMatch = divIndex.get(companyCode)?.get(normalizeName(divisiName));
-  if (divMatch) return divMatch;
-  const deptMatch = deptIndex.get(companyCode)?.get(normalizeName(departemenName));
-  if (deptMatch) return deptMatch;
+  const divCandidates = [divisiName, stripOwnCompanySuffix(divisiName, companyCode)];
+  for (const candidate of divCandidates) {
+    const divMatch = divIndex.get(companyCode)?.get(normalizeName(candidate));
+    if (divMatch) return divMatch;
+  }
+  const deptCandidates = [departemenName, stripOwnCompanySuffix(departemenName, companyCode)];
+  for (const candidate of deptCandidates) {
+    const deptMatch = deptIndex.get(companyCode)?.get(normalizeName(candidate));
+    if (deptMatch) return deptMatch;
+  }
   return null;
 }
 
@@ -289,7 +312,6 @@ async function main() {
     return null;
   }
 
-  const seenMemoNumbers = new Set<string>();
   interface PlannedMemo {
     oldId: SqlValue;
     legacyId: string;
@@ -311,6 +333,7 @@ async function main() {
     attachmentFileName: string | null;
   }
   const plannedMemos: PlannedMemo[] = [];
+  const plannedByMemoNumber = new Map<string, PlannedMemo>();
 
   for (const m of oldMemos) {
     const oldId = m.id_memo;
@@ -333,11 +356,24 @@ async function main() {
       continue;
     }
 
-    const memoNumber = s(m.nomor_memo) || `LEGACY-${oldId}`;
-    if (seenMemoNumbers.has(memoNumber)) {
-      report.memos.duplicateMemoNumbers.push(memoNumber);
+    let memoNumber = s(m.nomor_memo) || `LEGACY-${oldId}`;
+    const priorHolder = plannedByMemoNumber.get(memoNumber);
+    if (priorHolder) {
+      // A collision on Memo.memoNumber (which is unique in the new schema). Most observed
+      // cases are "rejected draft, then resubmitted and approved under the same official
+      // number" — the rejected side never became an official/final document, so per the
+      // numbering policy ("nomor cancelled/rejected tidak digunakan ulang") it's safe to
+      // suffix whichever side is REJECTED rather than block the whole commit. A collision
+      // between two non-rejected (ARCHIVED) records is genuinely ambiguous and still blocks.
+      if (targetStatus === "REJECTED") {
+        memoNumber = `${memoNumber} (rev-${oldId})`;
+      } else if (priorHolder.targetStatus === "REJECTED") {
+        priorHolder.memoNumber = `${priorHolder.memoNumber} (rev-${priorHolder.oldId})`;
+        plannedByMemoNumber.delete(memoNumber);
+      } else {
+        report.memos.duplicateMemoNumbers.push(memoNumber);
+      }
     }
-    seenMemoNumbers.add(memoNumber);
 
     // Base recipient (DEPARTMENT for internal memos, EXTERNAL for jenis_memo === "ME").
     const isExternal = s(m.jenis_memo) === "ME";
@@ -352,7 +388,9 @@ async function main() {
           ? "RU"
           : "UC";
       const deptId = resolveDepartment(deptIndex, divIndex, recipientCompanyCode, s(m.dept_memo), s(m.divt_memo));
-      if (!deptId) report.memos.recipientDepartmentUnmatched.push({ oldMemoId: oldId, name: `${s(m.dept_memo)} / ${s(m.divt_memo)}` });
+      if (!deptId && !(isPlaceholder(m.dept_memo) && isPlaceholder(m.divt_memo))) {
+        report.memos.recipientDepartmentUnmatched.push({ oldMemoId: oldId, name: `${s(m.dept_memo)} / ${s(m.divt_memo)}` });
+      }
       recipients.push({
         partyType: "DEPARTMENT",
         partyId: deptId,
@@ -363,7 +401,9 @@ async function main() {
     for (const extra of oldMism.filter((r) => Number(r.idmemo_mism) === Number(oldId))) {
       const cCode = s(extra.comt_mism).toUpperCase().includes("GSU") ? "GSU" : s(extra.comt_mism).toUpperCase().includes("RU") ? "RU" : "UC";
       const deptId = resolveDepartment(deptIndex, divIndex, cCode, s(extra.dept_mism), s(extra.divt_mism));
-      if (!deptId) report.memos.recipientDepartmentUnmatched.push({ oldMemoId: oldId, name: `${s(extra.dept_mism)} / ${s(extra.divt_mism)}` });
+      if (!deptId && !(isPlaceholder(extra.dept_mism) && isPlaceholder(extra.divt_mism))) {
+        report.memos.recipientDepartmentUnmatched.push({ oldMemoId: oldId, name: `${s(extra.dept_mism)} / ${s(extra.divt_mism)}` });
+      }
       recipients.push({
         partyType: "DEPARTMENT",
         partyId: deptId,
@@ -396,7 +436,7 @@ async function main() {
       }
     }
 
-    plannedMemos.push({
+    const plannedMemo: PlannedMemo = {
       oldId,
       legacyId,
       memoNumber,
@@ -412,7 +452,9 @@ async function main() {
       recipients,
       extraSenders,
       attachmentFileName,
-    });
+    };
+    plannedMemos.push(plannedMemo);
+    plannedByMemoNumber.set(memoNumber, plannedMemo);
     report.memos.toCreate++;
     report.memos.byTargetStatus[targetStatus] = (report.memos.byTargetStatus[targetStatus] ?? 0) + 1;
   }

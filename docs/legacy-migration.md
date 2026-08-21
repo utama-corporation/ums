@@ -44,14 +44,23 @@ masuk perubahan ini.
 - `EMPLOYEE_API_TOKEN` sudah terisi di `.env.production` (sudah ada dari fitur employee
   sync sebelumnya).
 
+> **Semua command `docker compose` di bawah wajib memakai `--env-file .env.production`**
+> setelah `-f docker-compose.prod.yml`, kalau tidak akan gagal dengan error
+> `POSTGRES_PASSWORD must be set`.
+>
+> **Semua pemanggilan `tsx` di bawah memakai path binary langsung**
+> (`apps/<app>/node_modules/.bin/tsx`), bukan `npx tsx` — karena pnpm workspace tidak
+> meng-hoist binary ke root `/app/node_modules/.bin`, jadi `npx tsx` yang dijalankan dari
+> root repo tidak akan menemukannya.
+
 ### 1. Sinkronkan Department/Divisi/Sub-Divisi lebih dulu
 
 Wajib dijalankan sebelum migrasi User/Memo — `migrateLegacy.ts` akan menolak berjalan
 (exit dengan pesan jelas) kalau belum ada data `Company`/`Department` sama sekali.
 
 ```bash
-docker compose -f docker-compose.prod.yml run --rm worker \
-  npx tsx apps/worker/scripts/runDepartmentSyncOnce.ts
+docker compose -f docker-compose.prod.yml --env-file .env.production run --rm worker \
+  apps/worker/node_modules/.bin/tsx apps/worker/scripts/runDepartmentSyncOnce.ts
 ```
 
 Cek hasilnya: harus mencetak `{ companies: 3, departments: ..., divisions: ..., subDivisions: ... }`
@@ -68,10 +77,10 @@ cp -r /path/ke/upload /opt/ums-legacy-data/upload
 ### 3. Dry-run migrasi User + Memo
 
 ```bash
-docker compose -f docker-compose.prod.yml run --rm \
+docker compose -f docker-compose.prod.yml --env-file .env.production run --rm \
   -v /opt/ums-legacy-data:/legacy:ro \
   api \
-  npx tsx apps/api/scripts/legacyMigration/migrateLegacy.ts \
+  apps/api/node_modules/.bin/tsx apps/api/scripts/legacyMigration/migrateLegacy.ts \
   --dry-run \
   --dump=/legacy/umsapp.sql \
   --upload-dir=/legacy/upload
@@ -99,10 +108,10 @@ Ulangi langkah 2–3 kalau ada yang perlu diperbaiki di sisi data lama atau di m
 Setelah laporan dry-run terlihat wajar:
 
 ```bash
-docker compose -f docker-compose.prod.yml run --rm \
+docker compose -f docker-compose.prod.yml --env-file .env.production run --rm \
   -v /opt/ums-legacy-data:/legacy:ro \
   api \
-  npx tsx apps/api/scripts/legacyMigration/migrateLegacy.ts \
+  apps/api/node_modules/.bin/tsx apps/api/scripts/legacyMigration/migrateLegacy.ts \
   --commit \
   --dump=/legacy/umsapp.sql \
   --upload-dir=/legacy/upload
@@ -118,19 +127,19 @@ Pastikan dulu tombol "Test Koneksi" di Settings → Lampiran File berhasil. Baru
 
 ```bash
 # dry-run dulu
-docker compose -f docker-compose.prod.yml run --rm \
+docker compose -f docker-compose.prod.yml --env-file .env.production run --rm \
   -v /opt/ums-legacy-data:/legacy:ro \
   api \
-  npx tsx apps/api/scripts/legacyMigration/uploadLegacyAttachments.ts \
+  apps/api/node_modules/.bin/tsx apps/api/scripts/legacyMigration/uploadLegacyAttachments.ts \
   --dry-run \
   --dump=/legacy/umsapp.sql \
   --upload-dir=/legacy/upload
 
 # lalu commit
-docker compose -f docker-compose.prod.yml run --rm \
+docker compose -f docker-compose.prod.yml --env-file .env.production run --rm \
   -v /opt/ums-legacy-data:/legacy:ro \
   api \
-  npx tsx apps/api/scripts/legacyMigration/uploadLegacyAttachments.ts \
+  apps/api/node_modules/.bin/tsx apps/api/scripts/legacyMigration/uploadLegacyAttachments.ts \
   --commit \
   --dump=/legacy/umsapp.sql \
   --upload-dir=/legacy/upload
