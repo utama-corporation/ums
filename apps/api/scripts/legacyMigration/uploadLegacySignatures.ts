@@ -96,7 +96,12 @@ async function main() {
       continue;
     }
 
-    const filePath = path.join(UPLOAD_DIR, fileName);
+    // The legacy app saves tdt_user images under upload/images/ (see app/ajax_pengguna.php),
+    // unlike memo attachments which sit directly under upload/ — fall back to the flat path
+    // in case a different deployment ever puts them there instead.
+    const imagesSubdirPath = path.join(UPLOAD_DIR, "images", fileName);
+    const flatPath = path.join(UPLOAD_DIR, fileName);
+    const filePath = fs.existsSync(imagesSubdirPath) ? imagesSubdirPath : flatPath;
     if (!fs.existsSync(filePath)) {
       missingOnDisk.push(`${user.username} -> ${fileName}`);
       continue;
