@@ -1,0 +1,7 @@
+{
+  "extends": "@ums/tsconfig/base.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": ["legacyMigration/**/*", "../src/services/sanitizerService.ts", "../src/services/storageService.ts"]
+}

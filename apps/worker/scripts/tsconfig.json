@@ -1,0 +1,7 @@
+{
+  "extends": "@ums/tsconfig/base.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": ["**/*", "../src/departmentSyncWorker.ts", "../src/pollingLoop.ts"]
+}

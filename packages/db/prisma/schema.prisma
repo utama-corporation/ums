@@ -34,6 +34,9 @@ model User {
   departmentId    String?        @db.Uuid
   position        String?
   isActive        Boolean        @default(true)
+  // Traceability + idempotent re-import marker for records brought in from the legacy
+  // pre-UMS system (e.g. "legacy-user:42"). Null for users created natively in this system.
+  legacySourceId  String?        @unique
   createdAt       DateTime       @default(now()) @db.Timestamptz
   updatedAt       DateTime       @updatedAt @db.Timestamptz
   deletedAt       DateTime?      @db.Timestamptz
@@ -301,6 +304,9 @@ model Memo {
   authorId            String               @db.Uuid
   deadline            DateTime?            @db.Timestamptz
   revisesMemoId       String?              @db.Uuid
+  // Traceability + idempotent re-import marker for memos brought in from the legacy
+  // pre-UMS system (e.g. "legacy-memo:208"). Null for memos created natively in this system.
+  legacySourceId      String?              @unique
   createdAt           DateTime             @default(now()) @db.Timestamptz
   updatedAt           DateTime             @updatedAt @db.Timestamptz
   deletedAt           DateTime?            @db.Timestamptz

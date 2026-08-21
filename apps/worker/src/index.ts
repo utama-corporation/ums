@@ -2,11 +2,12 @@ import { env } from "@ums/config";
 import { prisma } from "@ums/db";
 import { createOutboxWorkerLoop } from "./outboxWorker.js";
 import { createEmployeeSyncLoop } from "./employeeSyncWorker.js";
+import { createDepartmentSyncLoop } from "./departmentSyncWorker.js";
 import { createTaskOverdueLoop } from "./taskOverdueWorker.js";
 
 console.log(`Starting @ums/worker daemon in ${env.NODE_ENV} environment...`);
 
-const loops = [createOutboxWorkerLoop(), createEmployeeSyncLoop(), createTaskOverdueLoop()];
+const loops = [createOutboxWorkerLoop(), createEmployeeSyncLoop(), createDepartmentSyncLoop(), createTaskOverdueLoop()];
 
 for (const loop of loops) {
   loop.start();
