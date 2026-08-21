@@ -2,10 +2,9 @@ import { prisma } from "@ums/db";
 import { ExportCreateInput, UserProfile } from "@ums/contracts";
 import { ForbiddenError, NotFoundError } from "../errors/AppError.js";
 import { logAuditEvent } from "./auditService.js";
-import { s3Client } from "./storageService.js";
+import { getS3Client, getS3Bucket } from "./storageService.js";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { env } from "@ums/config";
 
 export async function createExportJob(user: UserProfile, input: ExportCreateInput) {
   if (input.reportType === "user-activity" && !user.permissions.includes("audit.view")) {
@@ -75,10 +74,10 @@ export async function getExportDownloadUrl(jobId: string, user: UserProfile) {
   }
 
   const getCommand = new GetObjectCommand({
-    Bucket: env.S3_BUCKET,
+    Bucket: await getS3Bucket(),
     Key: job.fileObjectKey,
   });
-  const downloadUrl = await getSignedUrl(s3Client, getCommand, { expiresIn: 900 });
+  const downloadUrl = await getSignedUrl(await getS3Client(), getCommand, { expiresIn: 900 });
 
   await logAuditEvent({
     actorId: user.id,

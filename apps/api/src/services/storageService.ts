@@ -1,22 +1,48 @@
 import { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { env } from "@ums/config";
 import { prisma } from "@ums/db";
 import { BadRequestError, NotFoundError, ForbiddenError } from "../errors/AppError.js";
 import { logAuditEvent } from "./auditService.js";
 import { isMemoAuthorOrAdmin, assertMemoViewScope } from "./memoDraftService.js";
+import { resolveS3StorageConfig } from "./settingsService.js";
 import { UserProfile } from "@ums/contracts";
 import crypto from "crypto";
 
-export const s3Client = new S3Client({
-  endpoint: env.S3_ENDPOINT,
-  region: env.S3_REGION,
-  credentials: {
-    accessKeyId: env.S3_ACCESS_KEY,
-    secretAccessKey: env.S3_SECRET_KEY,
-  },
-  forcePathStyle: env.S3_FORCE_PATH_STYLE,
-});
+// The S3/MinIO endpoint and keys are configurable from Settings > Lampiran File (DB-backed,
+// see settingsService.getS3Config/updateS3Config), so the client can't be a module-level
+// singleton built once from env at process start — it has to be rebuilt when settings
+// change. A short TTL cache avoids hitting the DB on every attachment operation while still
+// picking up changes without a process restart (same pattern as apps/worker/src/mailer.ts).
+let cachedClient: { client: S3Client; bucket: string; fetchedAt: number } | null = null;
+const CLIENT_CACHE_TTL_MS = 60 * 1000;
+
+async function getS3ClientAndBucket(): Promise<{ client: S3Client; bucket: string }> {
+  if (cachedClient && Date.now() - cachedClient.fetchedAt < CLIENT_CACHE_TTL_MS) {
+    return cachedClient;
+  }
+
+  const config = await resolveS3StorageConfig();
+  const client = new S3Client({
+    endpoint: config.endpoint,
+    region: config.region,
+    credentials: {
+      accessKeyId: config.accessKeyId,
+      secretAccessKey: config.secretAccessKey,
+    },
+    forcePathStyle: config.forcePathStyle,
+  });
+
+  cachedClient = { client, bucket: config.bucket, fetchedAt: Date.now() };
+  return cachedClient;
+}
+
+export async function getS3Client(): Promise<S3Client> {
+  return (await getS3ClientAndBucket()).client;
+}
+
+export async function getS3Bucket(): Promise<string> {
+  return (await getS3ClientAndBucket()).bucket;
+}
 
 const ALLOWED_MIME_TYPES = [
   "application/pdf",
@@ -74,13 +100,14 @@ export async function initiateAttachmentUpload(
     },
   });
 
+  const { client, bucket } = await getS3ClientAndBucket();
   const putCommand = new PutObjectCommand({
-    Bucket: env.S3_BUCKET,
+    Bucket: bucket,
     Key: objectKey,
     ContentType: mimeType,
   });
 
-  const uploadUrl = await getSignedUrl(s3Client, putCommand, { expiresIn: 900 }); // 15 mins
+  const uploadUrl = await getSignedUrl(client, putCommand, { expiresIn: 900 }); // 15 mins
 
   await logAuditEvent({
     actorId: actor.id,
@@ -116,11 +143,12 @@ export async function completeAttachmentUpload(
   }
 
   try {
+    const { client, bucket } = await getS3ClientAndBucket();
     const headCommand = new HeadObjectCommand({
-      Bucket: env.S3_BUCKET,
+      Bucket: bucket,
       Key: attachmentObj.objectKey,
     });
-    await s3Client.send(headCommand);
+    await client.send(headCommand);
   } catch (error) {
     throw new BadRequestError("File binary not found in storage. Ensure upload completed before verifying.");
   }
@@ -159,13 +187,14 @@ export async function getAttachmentDownloadUrl(attachmentId: string, actor: User
   if (!owningLink) throw new NotFoundError("Ready attachment not found");
   assertMemoViewScope(owningLink.memo, actor);
 
+  const { client, bucket } = await getS3ClientAndBucket();
   const getCommand = new GetObjectCommand({
-    Bucket: env.S3_BUCKET,
+    Bucket: bucket,
     Key: attachmentObj.objectKey,
     ResponseContentDisposition: `attachment; filename="${attachmentObj.fileName}"`,
   });
 
-  const downloadUrl = await getSignedUrl(s3Client, getCommand, { expiresIn: 900 });
+  const downloadUrl = await getSignedUrl(client, getCommand, { expiresIn: 900 });
 
   await logAuditEvent({
     actorId: actor.id,
@@ -200,11 +229,12 @@ export async function removeAttachment(attachmentId: string, actor: UserProfile)
   });
 
   try {
+    const { client, bucket } = await getS3ClientAndBucket();
     const deleteCommand = new DeleteObjectCommand({
-      Bucket: env.S3_BUCKET,
+      Bucket: bucket,
       Key: memoAttachment.attachmentObject.objectKey,
     });
-    await s3Client.send(deleteCommand);
+    await client.send(deleteCommand);
   } catch (error) {
     console.error("Failed to delete S3 object:", error);
   }

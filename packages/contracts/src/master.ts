@@ -20,6 +20,30 @@ export const SmtpConfigSchema = z.object({
 
 export type SmtpConfigInput = z.infer<typeof SmtpConfigSchema>;
 
+export const S3ConfigSchema = z.object({
+  endpoint: z.string().url(),
+  region: z.string().min(1),
+  bucket: z.string().min(1),
+  accessKey: z.string().min(1),
+  // Optional/omitted = keep the currently stored secret key unchanged, mirroring the
+  // "leave blank to not change" convention used for admin-triggered password resets.
+  secretKey: z.string().min(1).optional(),
+  forcePathStyle: z.boolean(),
+});
+
+export type S3ConfigInput = z.infer<typeof S3ConfigSchema>;
+
+export interface S3ConfigResponse {
+  endpoint: string;
+  region: string;
+  bucket: string;
+  accessKey: string;
+  // Never the real secret/ciphertext — just whether one has been set, so the UI can
+  // render a masked placeholder instead of an empty field.
+  secretKeyConfigured: boolean;
+  forcePathStyle: boolean;
+}
+
 export const EmailTemplateUpdateSchema = z.object({
   subject: z.string().min(1),
   bodyHtml: z.string().min(1),

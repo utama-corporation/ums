@@ -1,18 +1,8 @@
 import { prisma } from "@ums/db";
 import { ReportType } from "@ums/contracts";
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
-import { env } from "@ums/config";
+import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { getS3ClientAndBucket } from "./storageConfig.js";
 import crypto from "crypto";
-
-const s3Client = new S3Client({
-  endpoint: env.S3_ENDPOINT,
-  region: env.S3_REGION,
-  credentials: {
-    accessKeyId: env.S3_ACCESS_KEY,
-    secretAccessKey: env.S3_SECRET_KEY,
-  },
-  forcePathStyle: env.S3_FORCE_PATH_STYLE,
-});
 
 export interface ExportRequestedPayload {
   exportJobId: string;
@@ -197,9 +187,10 @@ export async function processExportRequested(payload: ExportRequestedPayload) {
     const csvContent = toCsv(headers, rows);
     const objectKey = `exports/${payload.userId}/${payload.reportType}-${crypto.randomUUID()}.csv`;
 
-    await s3Client.send(
+    const { client, bucket } = await getS3ClientAndBucket();
+    await client.send(
       new PutObjectCommand({
-        Bucket: env.S3_BUCKET,
+        Bucket: bucket,
         Key: objectKey,
         Body: csvContent,
         ContentType: "text/csv",

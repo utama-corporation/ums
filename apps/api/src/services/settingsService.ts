@@ -1,7 +1,7 @@
 import { prisma } from "@ums/db";
-import { env } from "@ums/config";
+import { env, encryptSecret, decryptSecret } from "@ums/config";
 import { NotFoundError } from "../errors/AppError.js";
-import { CompanyProfileUpdateInput, SecurityPolicyInput, SmtpConfigInput } from "@ums/contracts";
+import { CompanyProfileUpdateInput, SecurityPolicyInput, SmtpConfigInput, S3ConfigInput, S3ConfigResponse } from "@ums/contracts";
 import { logAuditEvent } from "./auditService.js";
 
 export async function getCompanyProfile() {
@@ -145,4 +145,116 @@ export async function updateSmtpConfig(input: SmtpConfigInput, actorId?: string)
   });
 
   return getSmtpConfig();
+}
+
+// Unlike SMTP_PASS, the S3 secret key is meant to be editable from the Settings UI rather
+// than staying pinned to an env var forever — so it's stored here encrypted at rest
+// (see @ums/config's encryptSecret/decryptSecret) instead of being excluded like the SMTP
+// password is.
+const S3_ENDPOINT_KEY = "s3.endpoint";
+const S3_REGION_KEY = "s3.region";
+const S3_BUCKET_KEY = "s3.bucket";
+const S3_ACCESS_KEY_KEY = "s3.access_key";
+const S3_SECRET_KEY_KEY = "s3.secret_key";
+const S3_FORCE_PATH_STYLE_KEY = "s3.force_path_style";
+const S3_KEYS = [S3_ENDPOINT_KEY, S3_REGION_KEY, S3_BUCKET_KEY, S3_ACCESS_KEY_KEY, S3_SECRET_KEY_KEY, S3_FORCE_PATH_STYLE_KEY];
+
+async function loadS3SettingRows(): Promise<Map<string, string>> {
+  const rows = await prisma.systemSetting.findMany({ where: { key: { in: S3_KEYS } } });
+  return new Map(rows.map((r) => [r.key, r.value]));
+}
+
+export async function getS3Config(): Promise<S3ConfigResponse> {
+  const byKey = await loadS3SettingRows();
+
+  return {
+    endpoint: byKey.get(S3_ENDPOINT_KEY) ?? env.S3_ENDPOINT,
+    region: byKey.get(S3_REGION_KEY) ?? env.S3_REGION,
+    bucket: byKey.get(S3_BUCKET_KEY) ?? env.S3_BUCKET,
+    accessKey: byKey.get(S3_ACCESS_KEY_KEY) ?? env.S3_ACCESS_KEY,
+    secretKeyConfigured: byKey.has(S3_SECRET_KEY_KEY) || Boolean(env.S3_SECRET_KEY),
+    forcePathStyle: byKey.has(S3_FORCE_PATH_STYLE_KEY) ? byKey.get(S3_FORCE_PATH_STYLE_KEY) === "true" : env.S3_FORCE_PATH_STYLE,
+  };
+}
+
+// Internal-only: resolves the S3 config WITH the decrypted secret key, for building an
+// actual S3Client. Never expose this return value through an API response — that's what
+// getS3Config() (no secret) is for.
+export interface ResolvedS3Config {
+  endpoint: string;
+  region: string;
+  bucket: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  forcePathStyle: boolean;
+}
+
+export async function resolveS3StorageConfig(): Promise<ResolvedS3Config> {
+  const byKey = await loadS3SettingRows();
+  const encryptedSecret = byKey.get(S3_SECRET_KEY_KEY);
+
+  return {
+    endpoint: byKey.get(S3_ENDPOINT_KEY) ?? env.S3_ENDPOINT,
+    region: byKey.get(S3_REGION_KEY) ?? env.S3_REGION,
+    bucket: byKey.get(S3_BUCKET_KEY) ?? env.S3_BUCKET,
+    accessKeyId: byKey.get(S3_ACCESS_KEY_KEY) ?? env.S3_ACCESS_KEY,
+    secretAccessKey: encryptedSecret ? decryptSecret(encryptedSecret) : env.S3_SECRET_KEY,
+    forcePathStyle: byKey.has(S3_FORCE_PATH_STYLE_KEY) ? byKey.get(S3_FORCE_PATH_STYLE_KEY) === "true" : env.S3_FORCE_PATH_STYLE,
+  };
+}
+
+export async function updateS3Config(input: S3ConfigInput, actorId?: string): Promise<S3ConfigResponse> {
+  const before = await getS3Config();
+
+  const upserts = [
+    prisma.systemSetting.upsert({
+      where: { key: S3_ENDPOINT_KEY },
+      update: { value: input.endpoint },
+      create: { key: S3_ENDPOINT_KEY, value: input.endpoint, description: "S3/MinIO endpoint URL" },
+    }),
+    prisma.systemSetting.upsert({
+      where: { key: S3_REGION_KEY },
+      update: { value: input.region },
+      create: { key: S3_REGION_KEY, value: input.region, description: "S3/MinIO region" },
+    }),
+    prisma.systemSetting.upsert({
+      where: { key: S3_BUCKET_KEY },
+      update: { value: input.bucket },
+      create: { key: S3_BUCKET_KEY, value: input.bucket, description: "S3/MinIO bucket name" },
+    }),
+    prisma.systemSetting.upsert({
+      where: { key: S3_ACCESS_KEY_KEY },
+      update: { value: input.accessKey },
+      create: { key: S3_ACCESS_KEY_KEY, value: input.accessKey, description: "S3/MinIO access key" },
+    }),
+    prisma.systemSetting.upsert({
+      where: { key: S3_FORCE_PATH_STYLE_KEY },
+      update: { value: String(input.forcePathStyle) },
+      create: { key: S3_FORCE_PATH_STYLE_KEY, value: String(input.forcePathStyle), description: "Use path-style S3 URLs (required for most MinIO setups)" },
+    }),
+  ];
+
+  if (input.secretKey) {
+    const encrypted = encryptSecret(input.secretKey);
+    upserts.push(
+      prisma.systemSetting.upsert({
+        where: { key: S3_SECRET_KEY_KEY },
+        update: { value: encrypted },
+        create: { key: S3_SECRET_KEY_KEY, value: encrypted, description: "S3/MinIO secret key (encrypted at rest)" },
+      })
+    );
+  }
+
+  await prisma.$transaction(upserts);
+
+  await logAuditEvent({
+    actorId,
+    action: "S3_CONFIG_UPDATED",
+    module: "settings",
+    resourceType: "SystemSetting",
+    beforeData: before,
+    afterData: { ...input, secretKey: input.secretKey ? "[REDACTED]" : undefined },
+  });
+
+  return getS3Config();
 }

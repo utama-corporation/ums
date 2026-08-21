@@ -39,6 +39,11 @@ export const envSchema = z.object({
 
   SESSION_SECRET: z.string().min(16).default("dev_super_secret_session_key_change_in_production_32chars"),
 
+  // Derives the AES-256-GCM key used to encrypt secrets (currently: the S3/MinIO secret
+  // access key) before they're stored in the SystemSetting table. Unlike SMTP_PASS, the S3
+  // secret key is meant to be editable from the Settings UI, so it can't just stay in env.
+  SETTINGS_ENCRYPTION_KEY: z.string().min(16).default("dev_settings_encryption_key_change_in_production"),
+
   // Overrides the auth cookies' `Secure` flag independently of NODE_ENV. Browsers silently
   // drop `Secure` cookies on plain HTTP, so a production deploy not yet behind HTTPS needs
   // this set to "false" — otherwise login "succeeds" (200 with tokens) but no session
@@ -72,6 +77,7 @@ export const envSchema = z.object({
 export type Env = z.infer<typeof envSchema>;
 
 const DEFAULT_SESSION_SECRET = "dev_super_secret_session_key_change_in_production_32chars";
+const DEFAULT_SETTINGS_ENCRYPTION_KEY = "dev_settings_encryption_key_change_in_production";
 
 export function validateEnv(): Env {
   const result = envSchema.safeParse(process.env);
@@ -89,6 +95,14 @@ export function validateEnv(): Env {
     throw new Error(
       "SESSION_SECRET is still set to the development default in a production environment. " +
         "Set a real secret in .env.production (e.g. `openssl rand -hex 32`) before starting the API."
+    );
+  }
+
+  if (result.data.NODE_ENV === "production" && result.data.SETTINGS_ENCRYPTION_KEY === DEFAULT_SETTINGS_ENCRYPTION_KEY) {
+    throw new Error(
+      "SETTINGS_ENCRYPTION_KEY is still set to the development default in a production environment. " +
+        "Set a real secret in .env.production (e.g. `openssl rand -hex 32`) before starting the API — " +
+        "this key encrypts secrets like the S3 access key stored via the Settings UI."
     );
   }
 

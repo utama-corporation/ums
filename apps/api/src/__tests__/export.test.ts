@@ -12,7 +12,8 @@ vi.mock("@ums/db", () => ({
 }));
 
 vi.mock("../services/storageService.js", () => ({
-  s3Client: {},
+  getS3Client: vi.fn().mockResolvedValue({}),
+  getS3Bucket: vi.fn().mockResolvedValue("ums-attachments"),
 }));
 
 vi.mock("@aws-sdk/s3-request-presigner", () => ({

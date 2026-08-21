@@ -3,7 +3,7 @@ import QRCode from "qrcode";
 import crypto from "crypto";
 import { PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { s3Client } from "./storageService.js";
+import { getS3Client, getS3Bucket } from "./storageService.js";
 import { env } from "@ums/config";
 import { prisma } from "@ums/db";
 import { NotFoundError, ForbiddenError } from "../errors/AppError.js";
@@ -145,12 +145,12 @@ export async function publishMemo(memoId: string, publisher: UserProfile, ipAddr
     // 4. Upload Canonical PDF to S3/MinIO
     const s3Key = `published/${memo.id}/canonical-${sigResult.verificationToken}.pdf`;
     const putCommand = new PutObjectCommand({
-      Bucket: env.S3_BUCKET,
+      Bucket: await getS3Bucket(),
       Key: s3Key,
       Body: finalPdf.pdfBuffer,
       ContentType: "application/pdf",
     });
-    await s3Client.send(putCommand);
+    await (await getS3Client()).send(putCommand);
 
     // 5. Store Publication & Signature Records
     const publication = await tx.documentPublication.upsert({
@@ -235,12 +235,12 @@ export async function getCanonicalPdfDownloadUrl(memoId: string, actor: UserProf
   assertMemoViewScope(publication.memo, actor);
 
   const getCommand = new GetObjectCommand({
-    Bucket: env.S3_BUCKET,
+    Bucket: await getS3Bucket(),
     Key: publication.canonicalPdfKey,
     ResponseContentDisposition: `inline; filename="Canonical-Memo-${publication.memo.memoNumber || memoId}.pdf"`,
   });
 
-  const downloadUrl = await getSignedUrl(s3Client, getCommand, { expiresIn: 900 });
+  const downloadUrl = await getSignedUrl(await getS3Client(), getCommand, { expiresIn: 900 });
   return { downloadUrl, pdfHashSha256: publication.pdfHashSha256 };
 }
 

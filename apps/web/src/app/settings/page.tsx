@@ -407,6 +407,172 @@ function SmtpTab() {
   );
 }
 
+interface S3Config {
+  endpoint: string;
+  region: string;
+  bucket: string;
+  accessKey: string;
+  secretKeyConfigured: boolean;
+  forcePathStyle: boolean;
+}
+
+function StorageTab() {
+  const [form, setForm] = useState<S3Config & { secretKey: string }>({
+    endpoint: "",
+    region: "",
+    bucket: "",
+    accessKey: "",
+    secretKeyConfigured: false,
+    forcePathStyle: true,
+    secretKey: "",
+  });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
+  const [successMsg, setSuccessMsg] = useState("");
+
+  async function load() {
+    setLoading(true);
+    const res = await apiClient<S3Config>("/settings/storage");
+    setLoading(false);
+    if (res.success && res.data) {
+      setForm({ ...res.data, secretKey: "" });
+    } else {
+      setErrorMsg(res.error?.message || "Gagal memuat konfigurasi storage");
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setErrorMsg("");
+    setSuccessMsg("");
+
+    const payload = {
+      endpoint: form.endpoint,
+      region: form.region,
+      bucket: form.bucket,
+      accessKey: form.accessKey,
+      forcePathStyle: form.forcePathStyle,
+      ...(form.secretKey ? { secretKey: form.secretKey } : {}),
+    };
+    const res = await apiClient<S3Config>("/settings/storage", { method: "PATCH", body: JSON.stringify(payload) });
+    setSaving(false);
+    if (res.success) {
+      setSuccessMsg(res.message || "Konfigurasi storage berhasil disimpan.");
+      load();
+    } else {
+      setErrorMsg(res.error?.message || "Gagal menyimpan konfigurasi storage");
+    }
+  }
+
+  async function handleTestConnection() {
+    setTesting(true);
+    setErrorMsg("");
+    setSuccessMsg("");
+    const res = await apiClient("/settings/storage/test", { method: "POST" });
+    setTesting(false);
+    if (res.success) {
+      setSuccessMsg(res.message || "Koneksi storage berhasil.");
+    } else {
+      setErrorMsg(res.error?.message || "Gagal menguji koneksi storage");
+    }
+  }
+
+  if (loading) return <p className="text-sm text-slate-500">Memuat...</p>;
+
+  return (
+    <form onSubmit={handleSave} className="space-y-3.5 max-w-xl">
+      {errorMsg && <div className="bg-red-50 text-red-700 text-sm p-3 rounded border border-red-200">{errorMsg}</div>}
+      {successMsg && <div className="bg-green-50 text-green-700 text-sm p-3 rounded border border-green-200">{successMsg}</div>}
+      <p className="text-xs text-slate-500">
+        Konfigurasi endpoint MinIO/S3 eksternal untuk penyimpanan lampiran memo, dokumen terbit, dan file export. Endpoint
+        harus bisa diakses baik oleh server maupun langsung oleh browser pengguna (dipakai untuk link upload/download).
+      </p>
+      <div>
+        <label htmlFor="storage-endpoint" className="block text-xs font-bold mb-1.5">Endpoint *</label>
+        <input
+          id="storage-endpoint"
+          required
+          value={form.endpoint}
+          onChange={(e) => setForm({ ...form, endpoint: e.target.value })}
+          className="w-full border border-ums-border rounded-md px-3 py-2.5 text-sm"
+          placeholder="https://minio.contoh.com"
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label htmlFor="storage-region" className="block text-xs font-bold mb-1.5">Region *</label>
+          <input
+            id="storage-region"
+            required
+            value={form.region}
+            onChange={(e) => setForm({ ...form, region: e.target.value })}
+            className="w-full border border-ums-border rounded-md px-3 py-2.5 text-sm"
+            placeholder="us-east-1"
+          />
+        </div>
+        <div>
+          <label htmlFor="storage-bucket" className="block text-xs font-bold mb-1.5">Bucket *</label>
+          <input
+            id="storage-bucket"
+            required
+            value={form.bucket}
+            onChange={(e) => setForm({ ...form, bucket: e.target.value })}
+            className="w-full border border-ums-border rounded-md px-3 py-2.5 text-sm"
+            placeholder="ums-attachments"
+          />
+        </div>
+      </div>
+      <div>
+        <label htmlFor="storage-access-key" className="block text-xs font-bold mb-1.5">Access Key *</label>
+        <input
+          id="storage-access-key"
+          required
+          value={form.accessKey}
+          onChange={(e) => setForm({ ...form, accessKey: e.target.value })}
+          className="w-full border border-ums-border rounded-md px-3 py-2.5 text-sm"
+        />
+      </div>
+      <div>
+        <label htmlFor="storage-secret-key" className="block text-xs font-bold mb-1.5">Secret Key {form.secretKeyConfigured ? "" : "*"}</label>
+        <input
+          id="storage-secret-key"
+          type="password"
+          required={!form.secretKeyConfigured}
+          value={form.secretKey}
+          onChange={(e) => setForm({ ...form, secretKey: e.target.value })}
+          className="w-full border border-ums-border rounded-md px-3 py-2.5 text-sm"
+          placeholder={form.secretKeyConfigured ? "•••••••• (kosongkan jika tidak ingin mengubah)" : "Isi secret key"}
+        />
+      </div>
+      <div>
+        <label className="flex items-center gap-2 text-xs font-bold">
+          <input
+            type="checkbox"
+            checked={form.forcePathStyle}
+            onChange={(e) => setForm({ ...form, forcePathStyle: e.target.checked })}
+          />
+          Gunakan path-style URL (wajib untuk kebanyakan setup MinIO)
+        </label>
+      </div>
+      <div className="flex justify-between items-center pt-2">
+        <button type="button" onClick={handleTestConnection} disabled={testing} className="border border-ums-border text-slate-700 font-bold px-4 py-2 rounded-md text-sm disabled:opacity-50">
+          {testing ? "Menguji..." : "Test Koneksi"}
+        </button>
+        <button type="submit" disabled={saving} className="bg-ums-red text-white font-bold px-4 py-2 rounded-md text-sm disabled:opacity-50">
+          {saving ? "Menyimpan..." : "Simpan Perubahan"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
 function NotificationTemplatesTab() {
   const [templates, setTemplates] = useState<EmailTemplate[]>([]);
   const [selectedType, setSelectedType] = useState<string>("");
@@ -566,6 +732,11 @@ export default function SettingsPage() {
           <>
             <h2 className="text-lg font-bold text-ums-text mb-4">Template Email Notifikasi</h2>
             <NotificationTemplatesTab />
+          </>
+        ) : activeTab === "Lampiran File" ? (
+          <>
+            <h2 className="text-lg font-bold text-ums-text mb-4">Lampiran File (Storage)</h2>
+            <StorageTab />
           </>
         ) : activeTab === "Keamanan" ? (
           <>
