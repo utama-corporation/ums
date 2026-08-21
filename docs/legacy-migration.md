@@ -14,6 +14,7 @@ masuk perubahan ini.
 | `apps/api/scripts/legacyMigration/sqlDumpParser.ts` | Parser dump MySQL (`INSERT INTO ... VALUES ...`) — sudah diuji terhadap `umsapp.sql` asli (263 memo, 22 user, 0 baris korup). |
 | `apps/api/scripts/legacyMigration/migrateLegacy.ts` | Migrasi User + Memo. Mode `--dry-run` (default) dan `--commit`. Aman dijalankan berulang (idempoten via kolom `legacySourceId`). |
 | `apps/api/scripts/legacyMigration/uploadLegacyAttachments.ts` | Upload file lampiran lama ke S3/MinIO untuk memo yang sudah dimigrasi. Terpisah dari `migrateLegacy.ts` karena butuh koneksi storage yang sudah berfungsi. |
+| `apps/api/scripts/legacyMigration/uploadLegacySignatures.ts` | Migrasi foto tanda tangan lama (`user.tdt_user`, juga ada di folder `upload/`) ke `DigitalSignatureProfile.imageAssetKey` user yang sudah dimigrasi. User dengan `tdt_user = "default.jpg"` (placeholder, belum pernah upload) dilewati. Hanya memindahkan gambarnya — PIN/setup signature tetap harus dilakukan user/admin di sistem baru. |
 
 ## Keputusan yang sudah dikonfirmasi
 
@@ -145,7 +146,29 @@ docker compose -f docker-compose.prod.yml --env-file .env.production run --rm \
   --upload-dir=/legacy/upload
 ```
 
-### 6. Setelah migrasi
+### 6. Upload foto tanda tangan (opsional, sama seperti langkah 5)
+
+```bash
+# dry-run dulu
+docker compose -f docker-compose.prod.yml --env-file .env.production run --rm \
+  -v /opt/ums-legacy-data:/legacy:ro \
+  api \
+  apps/api/node_modules/.bin/tsx apps/api/scripts/legacyMigration/uploadLegacySignatures.ts \
+  --dry-run \
+  --dump=/legacy/umsapp.sql \
+  --upload-dir=/legacy/upload
+
+# lalu commit
+docker compose -f docker-compose.prod.yml --env-file .env.production run --rm \
+  -v /opt/ums-legacy-data:/legacy:ro \
+  api \
+  apps/api/node_modules/.bin/tsx apps/api/scripts/legacyMigration/uploadLegacySignatures.ts \
+  --commit \
+  --dump=/legacy/umsapp.sql \
+  --upload-dir=/legacy/upload
+```
+
+### 7. Setelah migrasi
 
 - Semua user hasil migrasi **tidak bisa login** sampai passwordnya direset manual satu per
   satu lewat Master User → Reset Password. Tidak ada mekanisme "reset massal" — ini
@@ -156,3 +179,5 @@ docker compose -f docker-compose.prod.yml --env-file .env.production run --rm \
 - Department/recipient yang tidak ke-match otomatis (lihat laporan dry-run) sebaiknya
   dirapikan manual lewat Master Department / edit memo, karena snapshot nama lama tetap
   tersimpan di `displayName` walau `partyId`-nya kosong.
+- Foto tanda tangan yang termigrasi belum bisa langsung dipakai untuk menandatangani apa
+  pun — user (atau admin) tetap harus menyelesaikan setup PIN/signature di sistem baru.
